@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StudyBahn — Find your Bachelor's &amp; Master's in Germany</title>
+    <meta name="description" content="Search 2,000+ international Bachelor's and Master's programmes in Germany with requirements, IELTS scores, tuition and application deadlines." />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;650;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body class="page-find">
+    <header id="site-header"></header>
+
+    <section class="hero">
+      <div class="container hero-inner">
+        <span class="eyebrow"><span class="flag"></span> International programmes in Germany</span>
+        <h1>Find the programme that <em>fits you</em> — and never miss a deadline.</h1>
+        <p class="lead">Search every English- and German-taught Bachelor's and Master's listed by DAAD. See admission requirements, IELTS scores, tuition and application deadlines at a glance.</p>
+        <form class="searchbox" id="search-form" role="search">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+          <label for="q" class="sr-only">Search programmes</label>
+          <input id="q" type="search" placeholder="Try “data science”, “AI”, “TU Munich”, “Berlin”…" autocomplete="off" />
+          <label for="deg-select" class="sr-only">Degree</label>
+          <select id="deg-select">
+            <option value="">All degrees</option>
+            <option value="2">Master's</option>
+            <option value="1">Bachelor's</option>
+          </select>
+          <button class="btn btn-primary" type="submit">Search</button>
+        </form>
+        <div class="quick" id="quick"></div>
+        <div class="stats" id="stats"></div>
+      </div>
+    </section>
+
+    <main class="container finder" id="results-top">
+      <aside class="filters" id="filters" aria-label="Filters"></aside>
+
+      <section aria-live="polite">
+        <div class="toolbar">
+          <button class="btn btn-ghost btn-sm filters-toggle" id="filters-open"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4" /></svg> Filters</button>
+          <div class="result-count" id="count">Loading…</div>
+          <button class="btn btn-ghost btn-sm" id="export-results" title="Send these results to the Excel / PDF export"><svg class="icon" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14" /></svg> Export results</button>
+          <label class="sr-only" for="sort">Sort</label>
+          <select class="select" id="sort">
+            <option value="rel">Best match</option>
+            <option value="deadline">Deadline: soonest</option>
+            <option value="name">Name A–Z</option>
+            <option value="uni">University A–Z</option>
+            <option value="city">City A–Z</option>
+            <option value="ielts">IELTS: lowest first</option>
+          </select>
+          <div class="viewseg" role="group" aria-label="View">
+            <button data-view="list" title="List view" aria-label="List view"></button>
+            <button data-view="grid" title="Grid view" aria-label="Grid view"></button>
+            <button data-view="map" title="Map view" aria-label="Map view"></button>
+          </div>
+        </div>
+        <div class="active-filters" id="active"></div>
+        <div id="results" class="results"></div>
+        <div id="map" hidden></div>
+        <nav class="pager" id="pager" aria-label="Pagination"></nav>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">
+        <span><b>StudyBahn</b> — your track to studying in Germany · Data: <a href="https://www2.daad.de/deutschland/studienangebote/international-programmes/en/" target="_blank" rel="noopener">DAAD</a> · Updated <span id="built"></span></span>
+        <span>Always confirm requirements and deadlines on the university's official page.</span>
+      </div>
+    </footer>
+
+    <script src="data/programmes.js"></script>
+    <script src="js/common.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
+    <script src="js/app.js" defer></script>
+  </body>
+</html>

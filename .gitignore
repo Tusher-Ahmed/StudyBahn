@@ -1,0 +1,3 @@
+scripts/.cache/
+scripts/fetch.log
+__pycache__/

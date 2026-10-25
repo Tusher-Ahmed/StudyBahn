@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Export — StudyBahn</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;650;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body class="page-export">
+    <header id="site-header"></header>
+    <main class="container" style="padding-bottom: 80px">
+      <div class="page-head">
+        <span class="badge badge-gold">Excel &amp; PDF</span>
+        <h1 style="margin-top: 12px">Export your choices</h1>
+        <p class="muted" style="max-width: 680px">
+          Pick the programmes you're applying to and download everything about them — requirements, language scores, deadlines, costs, document checklists and contacts — as an Excel tracker or a print-ready PDF.
+        </p>
+      </div>
+
+      <div class="export-layout">
+        <section>
+          <div class="panel">
+            <h3>1 · Choose programmes</h3>
+            <div class="picker">
+              <div class="searchbox searchbox-sm">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+                <label for="pick-q" class="sr-only">Search programmes to add</label>
+                <input id="pick-q" type="search" placeholder="Search a programme, university or city to add…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="pick-results" />
+              </div>
+              <div class="pick-results" id="pick-results" role="listbox" hidden></div>
+            </div>
+            <div class="row-gap" style="margin-top: 12px" id="quick-add"></div>
+          </div>
+
+          <div class="sel-head">
+            <h3 id="sel-title">Selected programmes</h3>
+            <div class="row-gap">
+              <label class="sr-only" for="order">Order</label>
+              <select class="select" id="order">
+                <option value="deadline">Order: by deadline</option>
+                <option value="added">Order: as added</option>
+                <option value="uni">Order: by university</option>
+                <option value="city">Order: by city</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" id="clear-sel">Clear</button>
+            </div>
+          </div>
+          <div id="selection"></div>
+        </section>
+
+        <aside class="export-side">
+          <div class="panel">
+            <h3>2 · Choose format</h3>
+            <div class="format-pick" role="radiogroup" aria-label="Format">
+              <button type="button" class="fmt on" data-fmt="xlsx" role="radio" aria-checked="true">
+                <span class="fmt-icon xls">XLS</span>
+                <span><b>Excel tracker</b><small>One sheet per topic, status dropdowns, filters</small></span>
+              </button>
+              <button type="button" class="fmt" data-fmt="pdf" role="radio" aria-checked="false">
+                <span class="fmt-icon pdf">PDF</span>
+                <span><b>PDF dossier</b><small>Summary + one page per programme, printable</small></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h3>3 · What to include</h3>
+            <div class="opts" id="sections"></div>
+            <label class="field">Deadlines for
+              <select class="select" id="region">
+                <option value="non-EU">Non-EU applicants</option>
+                <option value="EU">EU / EEA applicants</option>
+              </select>
+            </label>
+            <label class="field">File name
+              <input class="fsearch" id="fname" value="StudyBahn-my-programmes" />
+            </label>
+          </div>
+
+          <button class="btn btn-primary btn-lg" id="do-export" disabled>Export</button>
+          <div class="export-progress" id="progress" hidden>
+            <div class="progress"><i id="progress-bar" style="width: 0"></i></div>
+            <span id="progress-text" class="muted"></span>
+          </div>
+          <p class="muted" style="font-size: 12.5px; margin: 10px 2px 0">Everything is generated in your browser — nothing is uploaded. Data from DAAD; always confirm on the university's website.</p>
+        </aside>
+      </div>
+    </main>
+    <footer class="footer">
+      <div class="container">
+        <span><b>StudyBahn</b> — your track to studying in Germany</span>
+        <span>Always confirm requirements and deadlines on the university's official page.</span>
+      </div>
+    </footer>
+    <script src="data/programmes.js"></script>
+    <script src="js/common.js"></script>
+    <script src="js/export.js" defer></script>
+  </body>
+</html>
