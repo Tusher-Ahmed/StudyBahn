@@ -202,7 +202,7 @@
             <div>
               <h4>${esc(x.semester ? x.semester.replace(/^\w/, (c) => c.toUpperCase()) : "Application deadline")} ${i === 0 ? '<span class="badge badge-gold">Next</span>' : ""}</h4>
               <div class="who">${x.who ? "For applicants from " + esc(x.who) : "All applicants"}${x.from ? ` · Applications open ${UH.fmtDM(x.from)}` : ""}</div>
-              <div style="margin-top:6px"><span class="badge ${cls}">${label}</span></div>
+              <div style="margin-top:6px" class="row-gap"><span class="badge ${cls}">${label}</span>${x.tx ? `<span class="badge badge-muted" title="Read from the university's description — check the official page">Read from text · verify</span>` : ""}</div>
             </div>
             <div class="dl-count"><b>${x.days}</b><span>days left</span><br><button class="btn btn-ghost btn-sm" data-ics="${i}" style="margin-top:8px">${icon("calendar")} Add to calendar</button></div>
           </div>`;

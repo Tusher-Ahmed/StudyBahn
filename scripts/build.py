@@ -140,7 +140,91 @@ def parse_periods(raw):
                 continue
             entry[kind.lower()] = {"d": int(d), "m": mi, **({"y": int(yr)} if yr else {})}
         out.append(entry)
+    if not any("until" in e for e in out):
+        found = free_text_periods(text(raw))
+        if found:
+            return found
     return out
+
+
+MONTH_RE = r"(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec)"
+DATE_RE = re.compile(r"(\d{1,2})(?:st|nd|rd|th)?\.?\s+" + MONTH_RE + r"\.?(?:,?\s+(\d{4}))?", re.I)
+MONTH_ABBR = {m[:3]: i for m, i in MONTHS.items()}
+
+
+def _dm(m):
+    mi = MONTHS.get(m.group(2).lower()) or MONTH_ABBR.get(m.group(2).lower()[:3])
+    d = int(m.group(1))
+    if not mi or not 1 <= d <= 31:
+        return None
+    return {"d": d, "m": mi, **({"y": int(m.group(3))} if m.group(3) else {})}
+
+
+def _semester(s, last=False):
+    hits = [(x.start(), "winter semester" if x.group(1).lower() == "winter" else "summer semester")
+            for x in re.finditer(r"\b(winter|summer)\b", s, re.I)]
+    if not hits:
+        return ""
+    return (hits[-1] if last else hits[0])[1]
+
+
+def _who(s, last=False):
+    hits = [(x.start(), "non-EU countries" if re.match(r"non|international|third|visa|foreign", x.group(0), re.I) else "EU countries")
+            for x in re.finditer(r"non[- ]?eu|international applicants|third[- ]countr|visa|foreign applicants|\beu\b|eea|german citizens|german applicants", s, re.I)]
+    if not hits:
+        return None
+    return (hits[-1] if last else hits[0])[1]
+
+
+def free_text_periods(t):
+    """Best-effort deadlines from prose such as
+    'Deadline is 31 May (non-EU citizens) and 15 July (EU citizens) for the winter semester'."""
+    ms = list(DATE_RE.finditer(t))
+    out, i, who_now, prev_end = [], 0, "", 0
+    while i < len(ms):
+        m = ms[i]
+        nxt = ms[i + 1] if i + 1 < len(ms) else None
+        before = t[max(prev_end, m.start() - 40): m.start()]
+        between = t[m.end(): nxt.start()] if nxt else ""
+        start = None
+        if nxt and len(between) < 12 and re.search(r"-|–|\bto\b|\buntil\b|\btill\b", between, re.I):
+            start, end, i = m, nxt, i + 2
+        else:
+            if re.search(r"\b(from|starting|start|begins?|beginning|opens?|commenc\w*|as of|after|lectures?|classes|orientation)\b[^.\d]{0,15}$", before, re.I):
+                prev_end = m.end()
+                i += 1
+                continue
+            end, i = m, i + 1
+        after = t[end.end(): ms[i].start() if i < len(ms) else len(t)][:140]
+        ctx_before = t[prev_end:(start or end).start()]
+        w = _who(after[:40]) if re.match(r"\s*\(", after) else None
+        if not w:
+            wb = _who(ctx_before, last=True)
+            if wb:
+                who_now = wb
+            w = who_now
+        sem = _semester(after)
+        until = _dm(end)
+        if until:
+            e = {"who": w or "", "semester": sem, "text": "", "until": until, "tx": 1, "_sb": _semester(ctx_before, last=True)}
+            if start and _dm(start):
+                e["from"] = _dm(start)
+            out.append(e)
+        prev_end = end.end()
+    # fill a missing semester from the next entry ("31 May (non-EU) and 15 July (EU) for the winter semester")
+    for k in range(len(out) - 2, -1, -1):
+        if not out[k]["semester"] and out[k + 1]["semester"]:
+            out[k]["semester"] = out[k + 1]["semester"]
+    for e in out:
+        e["semester"] = e["semester"] or e["_sb"]
+        del e["_sb"]
+    seen, uniq = set(), []
+    for e in out:
+        key = (e["who"], e["semester"], e["until"]["d"], e["until"]["m"], e["until"].get("y"))
+        if key not in seen:
+            seen.add(key)
+            uniq.append(e)
+    return uniq
 
 
 def parse_lang(raw):
@@ -330,7 +414,7 @@ def main():
             "online": bool(c.get("isCompleteOnlinePossible")),
         }
         if det:
-            row["p"] = [{k: v for k, v in p.items() if k in ("who", "semester", "from", "until")} for p in det["periods"]]
+            row["p"] = [{k: v for k, v in p.items() if k in ("who", "semester", "from", "until", "tx")} for p in det["periods"]]
             if det.get("geo"):
                 row["geo"] = det["geo"]
             en = det.get("english") or {}
@@ -351,8 +435,23 @@ def main():
             )
         index.append({k: v for k, v in row.items() if v not in (None, "", [], False)})
 
+    # Fine-grained DAAD subjects (e.g. "Artificial Intelligence"), each placed in the
+    # subject area most of its programmes belong to.
+    from collections import Counter, defaultdict
+    votes = defaultdict(Counter)
+    for r in index:
+        for g in r.get("g", []):
+            votes[r["s"]][g] += 1
+    names = sorted({r["s"] for r in index if r.get("s")}, key=str.lower)
+    subjects = [{"id": i + 1, "name": n, "group": (votes[n].most_common(1)[0][0] if votes[n] else 0)} for i, n in enumerate(names)]
+    sid = {x["name"]: x["id"] for x in subjects}
+    for r in index:
+        if r.get("s"):
+            r["si"] = sid[r["s"]]
+
     meta = {
         "built": date.today().isoformat(),
+        "subjects": subjects,
         "source": "DAAD International Programmes in Germany",
         "groups": SUBJECT_GROUPS,
         "fos": {f["id"]: {"name": f["name"], "group": f["subjectGroup"]} for f in fos_map},

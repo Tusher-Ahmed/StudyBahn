@@ -7,6 +7,10 @@
   const META = DATA.meta;
   const groupName = (id) => META.groups[id] || "Other";
   const fosName = (id) => (META.fos[id] || {}).name || "";
+  const SUBJECTS = (META.subjects || []).map((x) => ({ id: String(x.id), name: x.name, group: String(x.group) }));
+  const SUBJ = new Map(SUBJECTS.map((x) => [x.id, x]));
+  const subjName = (id) => (SUBJ.get(String(id)) || {}).name || "";
+  const subjGroup = (id) => (SUBJ.get(String(id)) || {}).group || "";
 
   // ---------- search index
   const SYN = {
@@ -70,8 +74,8 @@
   }
 
   // ---------- state <-> URL
-  const DEFAULT = { q: "", deg: "", g: [], f: [], lang: [], fee: "", beg: [], city: [], dl: "", req: [], sort: "rel", page: 1, per: 20 };
-  const LISTS = ["g", "f", "lang", "beg", "city", "req"];
+  const DEFAULT = { q: "", deg: "", g: [], sub: [], f: [], lang: [], fee: "", beg: [], city: [], dl: "", req: [], sort: "rel", page: 1, per: 20 };
+  const LISTS = ["g", "sub", "f", "lang", "beg", "city", "req"];
   let S = readState();
   let view = store.get("view", "list");
 
@@ -103,7 +107,18 @@
   // ---------- filtering
   const PREDICATES = {
     deg: (p) => !S.deg || String(p.d) === S.deg,
-    g: (p) => !S.g.length || (p.g || []).some((x) => S.g.includes(String(x))),
+    // Subject: each ticked area matches on its ticked subjects (if any) or on the whole area;
+    // subjects ticked via search without their area count on their own. Any match passes.
+    subj: (p) => {
+      if (!S.g.length && !S.sub.length) return true;
+      const si = String(p.si);
+      const pg = (p.g || []).map(String);
+      for (const g of S.g) {
+        const picked = S.sub.filter((x) => subjGroup(x) === g);
+        if (picked.length ? picked.includes(si) : pg.includes(g)) return true;
+      }
+      return S.sub.some((x) => !S.g.includes(subjGroup(x)) && x === si);
+    },
     f: (p) => !S.f.length || (p.f || []).some((x) => S.f.includes(String(x))),
     lang: (p) => !S.lang.length || S.lang.some((l) => (l === "en" ? p._lang === "en" || p._lang === "en+" : p._lang === l)),
     fee: (p) => !S.fee || (S.fee === "free" ? isFree(p) : !isFree(p)),
@@ -182,7 +197,7 @@
   ];
   let citySearch = "";
   let fosSearch = "";
-  const openGroups = new Set(store.get("openFilters", ["deg", "g", "lang", "fee", "dl", "req"]));
+  const openGroups = new Set(store.get("openFilters2", ["deg", "subj", "lang", "fee", "dl", "req"]));
 
   function fgroup(key, title, body) {
     return `<details class="fgroup" data-key="${key}" ${openGroups.has(key) ? "open" : ""}><summary>${title}</summary>${body}</details>`;
@@ -196,6 +211,36 @@
     return `<div class="seg">${options.map(([v, l]) => `<button type="button" data-seg="${key}" data-v="${v}" class="${S[key] === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
   }
 
+  function subjectFilter(cG, cS) {
+    const subjOpt = (x, hint) => opt("sub", x.id, x.name, cS.get(x.id) || 0, S.sub.includes(x.id), hint);
+    const search = `<input class="fsearch" id="fos-search" placeholder="Search a subject, e.g. Data Science" value="${esc(fosSearch)}">`;
+    if (fosSearch.trim()) {
+      const q = norm(fosSearch);
+      const list = SUBJECTS.filter((x) => norm(x.name).includes(q) && ((cS.get(x.id) || 0) || S.sub.includes(x.id))).sort((a, b) => (cS.get(b.id) || 0) - (cS.get(a.id) || 0));
+      return `${search}<div class="opts scroll">${list.map((x) => subjOpt(x, groupName(x.group))).join("") || '<p class="muted">No subject matches</p>'}</div>`;
+    }
+    const areas = Object.entries(META.groups)
+      .map(([id, name]) => ({ id, name, n: cG.get(id) || 0 }))
+      .filter((a) => a.n || S.g.includes(a.id))
+      .sort((a, b) => S.g.includes(b.id) - S.g.includes(a.id) || b.n - a.n);
+    const orphan = S.sub.filter((x) => !S.g.includes(subjGroup(x)));
+    return `${search}
+      ${!S.g.length ? '<p class="hint">Tick an area to choose specific subjects inside it, or search above.</p>' : ""}
+      <div class="opts">
+        ${orphan.map((id) => subjOpt(SUBJ.get(id), groupName(subjGroup(id)))).join("")}
+        ${areas
+          .map((a) => {
+            const on = S.g.includes(a.id);
+            const html = opt("g", a.id, a.name, a.n, on);
+            if (!on) return html;
+            const list = SUBJECTS.filter((x) => x.group === a.id && ((cS.get(x.id) || 0) || S.sub.includes(x.id))).sort((x, y) => (cS.get(y.id) || 0) - (cS.get(x.id) || 0) || x.name.localeCompare(y.name));
+            const picked = S.sub.filter((x) => subjGroup(x) === a.id).length;
+            return `${html}<div class="sub-opts${list.length > 12 ? " scroll" : ""}"><div class="sub-note">${picked ? `${picked} selected` : `All ${list.length} subjects — or pick:`}</div>${list.map((x) => subjOpt(x)).join("")}</div>`;
+          })
+          .join("")}
+      </div>`;
+  }
+
   function renderFilters() {
     const el = $("#filters");
     const scroll = el.scrollTop;
@@ -207,8 +252,9 @@
     if (prof.german) tags.push(`German ${prof.german}`);
     tags.push(prof.region === "EU" ? "EU applicant" : "Non-EU applicant");
 
-    const cG = countBy(apply("g"), (p) => (p.g || []).map(String));
-    const cF = countBy(apply("f"), (p) => (p.f || []).map(String));
+    const subjBase = apply("subj");
+    const cG = countBy(subjBase, (p) => (p.g || []).map(String));
+    const cS = countBy(subjBase, (p) => [String(p.si)]);
     const cL = countBy(apply("lang"), (p) => [p._lang === "en+" ? "en" : p._lang]);
     const cB = countBy(apply("beg"), (p) => [/winter/i.test(p.b) && "winter", /summer/i.test(p.b) && "summer", !/winter|summer/i.test(p.b) && "other"].filter(Boolean));
     const cC = countBy(apply("city"), (p) => [p.c]);
@@ -223,7 +269,6 @@
       })
     );
 
-    const fosList = FOS.filter((f) => (!S.g.length || S.g.includes(f.group)) && (!fosSearch || norm(f.name).includes(norm(fosSearch))));
     const cityList = CITIES.filter((c) => !citySearch || norm(c).includes(norm(citySearch)))
       .map((c) => ({ c, n: cC.get(c) || 0 }))
       .sort((a, b) => S.city.includes(b.c) - S.city.includes(a.c) || b.n - a.n || a.c.localeCompare(b.c));
@@ -249,17 +294,7 @@
           .map(([v, l]) => `<label class="opt"><input type="radio" name="dl" data-radio="dl" value="${v}" ${S.dl === v ? "checked" : ""}><span>${l}</span></label>`)
           .join("")}</div>`
       )}
-      ${fgroup("g", "Subject area", `<div class="opts">${Object.entries(META.groups).map(([id, name]) => [id, name, cG.get(id) || 0]).filter((x) => x[2] || S.g.includes(x[0])).sort((a, b) => b[2] - a[2]).map(([id, name, n]) => opt("g", id, name, n, S.g.includes(id))).join("")}</div>`)}
-      ${fgroup(
-        "f",
-        `Field of study${S.f.length ? ` <span class="count">${S.f.length}</span>` : ""}`,
-        `<input class="fsearch" id="fos-search" placeholder="Search fields…" value="${esc(fosSearch)}"><div class="opts scroll">${fosList
-          .map((f) => [f, cF.get(f.id) || 0])
-          .filter(([f, n]) => n || S.f.includes(f.id))
-          .sort((a, b) => S.f.includes(b[0].id) - S.f.includes(a[0].id) || b[1] - a[1])
-          .map(([f, n]) => opt("f", f.id, f.name, n, S.f.includes(f.id)))
-          .join("") || '<p class="muted">No match</p>'}</div>`
-      )}
+      ${fgroup("subj", `Subject${S.g.length + S.sub.length ? ` <span class="count">${S.g.length + S.sub.length}</span>` : ""}`, subjectFilter(cG, cS))}
       ${fgroup("lang", "Teaching language", `<div class="opts">${LANGS.map(([v, l]) => opt("lang", v, l, cL.get(v) || 0, S.lang.includes(v))).join("")}</div>`)}
       ${fgroup("fee", "Tuition fees", seg("fee", [["", "Any"], ["free", "Free"], ["paid", "Paid"]]))}
       ${fgroup("req", "Requirements & applying", `<div class="opts">${REQS.map(([v, l, h]) => opt("req", v, l, cR.get(v) || 0, S.req.includes(v), h)).join("")}</div>`)}
@@ -304,6 +339,7 @@
       deadlineBadge(p),
     ];
     if (p.ielts) tags.push(`<span class="badge badge-gold" title="Minimum IELTS Academic">IELTS ${p.ielts}</span>`);
+    else if (p.en) tags.push(`<span class="badge badge-gold" title="Required English level (no IELTS score listed)">English ${esc(p.en)}</span>`);
     if (p.de) tags.push(`<span class="badge badge-gold">German ${esc(p.de)}</span>`);
     if (m && m.status === "ok") tags.push(`<span class="badge badge-ok match">${icon("check")} You qualify</span>`);
     if (m && m.status === "no") tags.push(`<span class="badge badge-danger match" title="${esc(m.notes.filter((n) => n.pass === false).map((n) => n.text).join(" · "))}">${icon("x")} Language gap</span>`);
@@ -312,7 +348,7 @@
         ${avatar(p.u)}
         <div>
           <h3><a href="program.html?id=${p.id}">${esc(p.n)}</a></h3>
-          <div class="uni"><span>${icon("cap")} ${esc(p.u)}</span><span>${icon("pin")} ${esc(p.c)}</span>${p.dur ? `<span>${icon("clock")} ${esc(p.dur)}</span>` : ""}</div>
+          <div class="uni"><span>${icon("cap")} ${esc(p.u)}</span><span>${icon("pin")} ${esc(p.c)}</span>${p.s ? `<span>${icon("doc")} ${esc(p.s)}</span>` : ""}${p.dur ? `<span>${icon("clock")} ${esc(p.dur)}</span>` : ""}</div>
           <div class="tags">${tags.join("")}</div>
         </div>
         <div class="card-actions">
@@ -382,6 +418,7 @@
     if (S.deg) add(degreeName(+S.deg), () => ((S.deg = ""), ($("#deg-select").value = "")));
     if (S.dl) add({ 30: "Closes ≤ 30 days", 90: "Closes ≤ 3 months", open: "Upcoming deadline", rolling: "No fixed deadline" }[S.dl], () => (S.dl = ""));
     S.g.forEach((g) => add(groupName(g), () => (S.g = S.g.filter((x) => x !== g))));
+    S.sub.forEach((x) => add(subjName(x), () => (S.sub = S.sub.filter((y) => y !== x))));
     S.f.forEach((f) => add(fosName(f), () => (S.f = S.f.filter((x) => x !== f))));
     S.lang.forEach((l) => add(LANGS.find((x) => x[0] === l)[1], () => (S.lang = S.lang.filter((x) => x !== l))));
     if (S.fee) add(S.fee === "free" ? "Tuition-free" : "Paid tuition", () => (S.fee = ""));
@@ -521,7 +558,7 @@
     if (t.dataset.k) {
       const k = t.dataset.k;
       S[k] = t.checked ? [...S[k], t.value] : S[k].filter((x) => x !== t.value);
-      if (k === "g") S.f = S.f.filter((f) => !S.g.length || S.g.includes(String((META.fos[f] || {}).group)));
+      if (k === "g" && !t.checked) S.sub = S.sub.filter((x) => subjGroup(x) !== t.value);
     } else if (t.dataset.radio) S[t.dataset.radio] = t.value;
     else return;
     S.page = 1;
@@ -546,7 +583,7 @@
       const d = e.target;
       if (!d.dataset || !d.dataset.key) return;
       d.open ? openGroups.add(d.dataset.key) : openGroups.delete(d.dataset.key);
-      store.set("openFilters", [...openGroups]);
+      store.set("openFilters2", [...openGroups]);
     },
     true
   );

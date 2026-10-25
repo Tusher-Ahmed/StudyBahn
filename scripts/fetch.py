@@ -79,7 +79,7 @@ def main():
         fos_map = json.loads(htmllib.unescape(m.group(1)))
     fos = {}
     for f in fos_map:
-        res = search([("fos", str(f["id"]))])
+        res = search([("fos[]", str(f["id"]))])
         for c in res["courses"]:
             fos.setdefault(c["id"], []).append(f["id"])
     print(f"  tagged {len(fos)} programmes with {len(fos_map)} fields of study")

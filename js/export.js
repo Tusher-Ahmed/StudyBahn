@@ -47,6 +47,18 @@
   const sectionHtml = (d, tab, label) => (((d.sections || {})[tab] || []).find((x) => x.label.toLowerCase() === label.toLowerCase()) || {}).html || "";
   const eur = (n) => (n || n === 0 ? "€" + Number(n).toLocaleString("en") : "");
 
+  /** Where to actually apply: the link in "Submit application via", else uni-assist, else the programme site. */
+  function portalUrl(d) {
+    const links = [...String(d.applyVia || "").matchAll(/href="([^"]+)"/g)].map((m) => {
+      decoder.innerHTML = m[1];
+      return decoder.value;
+    });
+    const web = links.find((u) => /^https?:/i.test(u));
+    if (web) return web;
+    if (d.uniAssist) return "https://www.uni-assist.de/en/";
+    return (d.contact || {}).courseUrl || "";
+  }
+
   function record(d, region) {
     const en = d.english || {};
     const de = d.german || {};
@@ -86,6 +98,7 @@
       gmat: !!d.gmat,
       applyVia: d.uniAssist ? "uni-assist" : d.applyVia ? "Directly to university" : "",
       applyText: htmlToText(d.applyVia),
+      applyUrl: portalUrl(d),
       academic: htmlToText(d.academic),
       deadlines: dls,
       next: dls[0] || null,
@@ -198,6 +211,7 @@
           { h: "German", k: "deLevel", w: 13 },
           { h: "GRE / GMAT", k: "test", w: 11 },
           { h: "Apply via", k: "applyVia", w: 18 },
+          { h: "Application portal", k: "applyUrl", w: 18, link: true, linkText: "Apply here" },
           { h: "Programme website", k: "courseUrl", w: 18, link: true, linkText: "Open website" },
           { h: "Contact email", k: "email", w: 26 },
           { h: "DAAD page", k: "daadUrl", w: 12, link: true, linkText: "DAAD" },
@@ -222,7 +236,7 @@
       recs.forEach((r) => {
         if (r.deadlines.length)
           r.deadlines.forEach((d) =>
-            rows.push({ name: r.name, uni: r.uni, sem: d.semester || "", who: d.who || "All applicants", opens: d.opens ? xlDate(d.opens) : "", date: xlDate(d.date), days: d.days, state: d.state === "soon" ? "Closing soon" : d.state === "notyet" ? "Not open yet" : "Upcoming", sort: d.date })
+            rows.push({ name: r.name, uni: r.uni, sem: d.semester || "", who: d.who || "All applicants", opens: d.opens ? xlDate(d.opens) : "", date: xlDate(d.date), days: d.days, state: (d.state === "soon" ? "Closing soon" : d.state === "notyet" ? "Not open yet" : "Upcoming") + (d.tx ? " · read from text, verify" : ""), sort: d.date })
           );
         else rows.push({ name: r.name, uni: r.uni, sem: "", who: "", opens: "", date: r.rolling ? "No fixed deadline" : "See website", days: "", state: r.deadlineText, sort: new Date(8.64e15) });
       });
@@ -324,6 +338,7 @@
           { h: "Faculty / department", k: "faculty", w: 28, wrap: true },
           { h: "Address", k: "address", w: 34, wrap: true },
           { h: "Email", k: "email", w: 30 },
+          { h: "Application portal", k: "applyUrl", w: 40, link: true },
           { h: "Programme website", k: "courseUrl", w: 40, link: true },
           { h: "University website", k: "uniUrl", w: 30, link: true },
           { h: "DAAD page", k: "daadUrl", w: 30, link: true },
@@ -367,60 +382,59 @@
   async function buildPdf(recs, opts) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "pt", format: "a4" });
-    const W = doc.internal.pageSize.getWidth();
-    const H = doc.internal.pageSize.getHeight();
     const M = 40;
-    const C = { navy: [16, 23, 42], gold: [245, 179, 1], red: [224, 50, 43], ink: [17, 24, 39], ink2: [55, 65, 81], muted: [107, 114, 128], line: [227, 231, 239], primary: [35, 64, 217], soft: [245, 247, 251], ok: [15, 157, 107], danger: [212, 54, 47] };
+    const C = { navy: [16, 23, 42], gold: [245, 179, 1], red: [224, 50, 43], ink: [17, 24, 39], ink2: [55, 65, 81], muted: [107, 114, 128], line: [227, 231, 239], primary: [35, 64, 217], primarySoft: [232, 237, 255], soft: [245, 247, 251], ok: [15, 157, 107], danger: [212, 54, 47] };
     const S = new Set(opts.sections);
-    let y = M;
     const T = pdfText;
+    const PW = () => doc.internal.pageSize.getWidth();
+    const PH = () => doc.internal.pageSize.getHeight();
+    const page = () => doc.internal.getNumberOfPages();
+    let y = M;
 
-    const ensure = (h) => {
-      if (y + h > H - M - 16) {
-        doc.addPage();
-        y = M;
-      }
-    };
+    // ---------- drawing helpers
     const set = (size, style, color) => {
       doc.setFont("helvetica", style || "normal");
       doc.setFontSize(size);
       doc.setTextColor(...(color || C.ink));
     };
+    const ensure = (h) => {
+      if (y + h > PH() - M - 16) {
+        doc.addPage("a4", "portrait");
+        y = M;
+      }
+    };
     function heading(label) {
       ensure(44);
-      y += 10;
+      y += 8;
       doc.setFillColor(...C.gold);
       doc.rect(M, y - 10, 3, 14, "F");
-      set(12.5, "bold", C.navy);
+      set(11.5, "bold", C.navy);
       doc.text(T(label), M + 10, y + 1);
-      y += 16;
+      y += 15;
     }
     function sub(label) {
       ensure(26);
-      set(10, "bold", C.ink);
+      set(9.5, "bold", C.ink);
       doc.text(T(label), M, y);
-      y += 13;
+      y += 12;
     }
-    function para(s, opt) {
+    function para(s, o) {
       if (!s) return;
-      opt = opt || {};
-      set(opt.size || 9.5, opt.style || "normal", opt.color || C.ink2);
-      const lh = (opt.size || 9.5) * 1.35;
-      const width = W - 2 * M - (opt.indent || 0);
+      o = o || {};
+      const size = o.size || 9;
+      const lh = size * 1.38;
+      set(size, o.style || "normal", o.color || C.ink2);
       T(s)
         .split("\n")
         .forEach((line) => {
-          if (!line.trim()) {
-            y += lh * 0.5;
-            return;
-          }
-          doc.splitTextToSize(line, width).forEach((l) => {
+          if (!line.trim()) return void (y += lh * 0.45);
+          doc.splitTextToSize(line, PW() - 2 * M - (o.indent || 0)).forEach((l) => {
             ensure(lh);
-            doc.text(l, M + (opt.indent || 0), y);
+            doc.text(l, M + (o.indent || 0), y);
             y += lh;
           });
         });
-      y += 4;
+      y += 3;
     }
     function table(head, body, o) {
       ensure(40);
@@ -429,9 +443,9 @@
           {
             startY: y,
             head: head ? [head.map(T)] : undefined,
-            body: body.map((r) => r.map((c) => (typeof c === "object" && c !== null ? Object.assign({}, c, { content: T(c.content) }) : T(c)))),
+            body: body.map((r) => r.map((c) => (c && typeof c === "object" ? Object.assign({}, c, { content: T(c.content) }) : T(c)))),
             margin: { left: M, right: M, top: M, bottom: M + 10 },
-            styles: { font: "helvetica", fontSize: 8.5, cellPadding: 5, textColor: C.ink2, lineColor: C.line, lineWidth: 0.5, overflow: "linebreak", valign: "top" },
+            styles: { font: "helvetica", fontSize: 8.5, cellPadding: 4.5, textColor: C.ink2, lineColor: C.line, lineWidth: 0.5, overflow: "linebreak", valign: "top" },
             headStyles: { fillColor: C.navy, textColor: [255, 255, 255], fontStyle: "bold" },
             alternateRowStyles: { fillColor: C.soft },
             theme: "grid",
@@ -439,17 +453,27 @@
           o || {}
         )
       );
-      y = doc.lastAutoTable.finalY + 12;
+      y = doc.lastAutoTable.finalY + 10;
     }
-    function link(label, url) {
+    function linkLine(label, url) {
       if (!url) return;
       ensure(14);
-      set(9.5, "bold", C.ink);
+      set(9, "bold", C.ink);
       doc.text(T(label), M, y);
-      set(9.5, "normal", C.primary);
-      const shown = T(url.length > 85 ? url.slice(0, 82) + "..." : url);
-      doc.textWithLink(shown, M + 110, y, { url });
-      y += 14;
+      set(9, "normal", C.primary);
+      const shown = T(url.replace(/^mailto:/, "").replace(/^https?:\/\//, "")).slice(0, 90);
+      doc.textWithLink(shown, M + 105, y, { url });
+      y += 13;
+    }
+    /** A pill-shaped clickable button. */
+    function button(label, url, x, yy, fill) {
+      set(9, "bold", fill ? [255, 255, 255] : C.primary);
+      const w = doc.getTextWidth(T(label)) + 22;
+      doc.setFillColor(...(fill || C.primarySoft));
+      doc.roundedRect(x, yy - 12, w, 18, 9, 9, "F");
+      doc.text(T(label), x + 11, yy);
+      if (url) doc.link(x, yy - 12, w, 18, { url });
+      return w;
     }
     function logo(x, yy, s) {
       doc.setDrawColor(255, 255, 255);
@@ -460,198 +484,347 @@
       doc.setFillColor(...C.gold);
       doc.circle(x + s * 0.47, yy - s * 0.47, s * 0.11, "F");
     }
+    const flagStripe = (yy) => {
+      const w = PW();
+      doc.setFillColor(20, 20, 20);
+      doc.rect(0, yy, w / 3, 4, "F");
+      doc.setFillColor(...C.red);
+      doc.rect(w / 3, yy, w / 3, 4, "F");
+      doc.setFillColor(...C.gold);
+      doc.rect((2 * w) / 3, yy, w / 3, 4, "F");
+    };
+    const dlShort = (d) => `${fmtDate(d.date)}${d.semester ? " - " + d.semester.replace(/ semester/i, "") : ""}${d.who ? " (" + d.who.replace(/ countries/i, "") + ")" : ""}${d.tx ? " *" : ""}`;
 
-    // ---------- cover
+    // ---------- group programmes by university (keeps the chosen order)
+    const unis = [];
+    const byUni = new Map();
+    recs.forEach((r) => {
+      if (!byUni.has(r.uni)) {
+        const u = { name: r.uni, url: r.uniUrl, cities: new Set(), progs: [] };
+        byUni.set(r.uni, u);
+        unis.push(u);
+      }
+      const u = byUni.get(r.uni);
+      u.cities.add(r.city);
+      u.progs.push(r);
+    });
+
+    // ---------- cover + reserved contents pages
     doc.setFillColor(...C.navy);
-    doc.rect(0, 0, W, 170, "F");
-    doc.setFillColor(20, 20, 20);
-    doc.rect(0, 170, W / 3, 4, "F");
-    doc.setFillColor(...C.red);
-    doc.rect(W / 3, 170, W / 3, 4, "F");
-    doc.setFillColor(...C.gold);
-    doc.rect((2 * W) / 3, 170, W / 3, 4, "F");
-    logo(M + 4, 76, 40);
+    doc.rect(0, 0, PW(), 160, "F");
+    flagStripe(160);
+    logo(M + 4, 72, 40);
     set(22, "bold", [255, 255, 255]);
-    doc.text("StudyBahn", M + 34, 64);
+    doc.text("StudyBahn", M + 34, 60);
     set(10, "normal", [200, 205, 215]);
-    doc.text("Your track to studying in Germany", M + 34, 80);
-    set(24, "bold", [255, 255, 255]);
-    doc.text("My programme selection", M, 136);
-    y = 204;
-    const nextAll = recs.filter((r) => r.next).sort((a, b) => a.next.date - b.next.date)[0];
+    doc.text("Your track to studying in Germany", M + 34, 76);
+    set(22, "bold", [255, 255, 255]);
+    doc.text("My university applications", M, 130);
+    y = 192;
+    const firstDl = recs.filter((r) => r.next).sort((a, b) => a.next.date - b.next.date)[0];
     [
       ["Generated", fmtDate(new Date())],
-      ["Programmes", String(recs.length)],
+      ["Universities", `${unis.length}  (${recs.length} programme${recs.length === 1 ? "" : "s"})`],
       ["Deadlines shown for", opts.region === "EU" ? "EU / EEA applicants" : "Non-EU applicants"],
       ["Your profile", profileSummary()],
-      ["Earliest deadline", nextAll ? `${fmtDate(nextAll.next.date)} - ${nextAll.name} (${nextAll.next.days} days left)` : "-"],
+      ["Earliest deadline", firstDl ? `${fmtDate(firstDl.next.date)} - ${firstDl.name}, ${firstDl.uni} (${firstDl.next.days} days left)` : "-"],
     ].forEach(([k, v]) => {
       set(9.5, "bold", C.muted);
       doc.text(T(k), M, y);
       set(9.5, "normal", C.ink);
-      doc.text(doc.splitTextToSize(T(v), W - 2 * M - 120)[0], M + 120, y);
+      doc.text(doc.splitTextToSize(T(v), PW() - 2 * M - 120)[0], M + 120, y);
       y += 15;
     });
+    y += 14;
+    set(13, "bold", C.navy);
+    doc.text("Contents", M, y);
     y += 8;
+    const tocTop = y + 14;
+    const LH = 15;
+    const tocLines = unis.length + recs.length + 2;
+    const firstCap = Math.floor((PH() - M - 30 - tocTop) / LH);
+    const extraTocPages = Math.max(0, Math.ceil((tocLines - firstCap) / Math.floor((PH() - 2 * M - 30) / LH)));
+    for (let i = 0; i < extraTocPages; i++) doc.addPage("a4", "portrait");
 
-    if (S.has("summary")) {
-      heading("Summary");
-      table(
-        ["#", "Programme", "University / City", "Next deadline", "Language", "Tuition"],
-        recs.map((r, i) => [String(i + 1), { content: r.name, styles: { fontStyle: "bold", textColor: C.ink } }, `${r.uni}\n${r.city}`, r.next ? `${fmtDate(r.next.date)}\n${r.next.days} days left` : r.rolling ? "No fixed deadline" : "See website", langSummary(r) || r.language, r.tuition]),
-        { columnStyles: { 0: { cellWidth: 20 }, 1: { cellWidth: 140 }, 3: { cellWidth: 78 } } }
-      );
-    }
-    if (S.has("deadlines")) {
-      const rows = [];
-      recs.forEach((r) => r.deadlines.forEach((d) => rows.push([d, r])));
-      rows.sort((a, b) => a[0].date - b[0].date);
-      if (rows.length) {
-        heading("Deadline calendar");
-        table(
-          ["Deadline", "Days left", "Programme", "Semester", "Applicants"],
-          rows.map(([d, r]) => [fmtDate(d.date), { content: String(d.days), styles: d.days <= 30 ? { textColor: C.danger, fontStyle: "bold" } : {} }, `${r.name}\n${r.uni}`, d.semester || "-", d.who || "All"]),
-          { columnStyles: { 0: { cellWidth: 70 }, 1: { cellWidth: 48 } } }
-        );
-      }
-    }
-
-    // ---------- one section per programme
-    recs.forEach((r, i) => {
-      doc.addPage();
+    // ---------- one section per university
+    let num = 0;
+    unis.forEach((u, ui) => {
+      doc.addPage("a4", "portrait");
+      u.page = page();
       doc.setFillColor(...C.navy);
-      doc.rect(0, 0, W, 92, "F");
+      doc.rect(0, 0, PW(), 100, "F");
       doc.setFillColor(...C.gold);
-      doc.rect(0, 92, W, 3, "F");
+      doc.rect(0, 100, PW(), 3, "F");
       set(8.5, "bold", C.gold);
-      doc.text(T(`PROGRAMME ${i + 1} OF ${recs.length}  ·  ${r.degree.toUpperCase()}`).replace(/[^\x00-\xff]/g, "-"), M, 28);
-      set(15, "bold", [255, 255, 255]);
-      const title = doc.splitTextToSize(T(r.name), W - 2 * M).slice(0, 2);
-      doc.text(title, M, 48);
+      doc.text(T(`UNIVERSITY ${ui + 1} OF ${unis.length}`), M, 28);
+      set(17, "bold", [255, 255, 255]);
+      const nameLines = doc.splitTextToSize(T(u.name), PW() - 2 * M).slice(0, 2);
+      doc.text(nameLines, M, 50);
       set(10, "normal", [205, 210, 220]);
-      doc.text(T(`${r.uni}  -  ${r.city}`), M, 48 + title.length * 17);
-      y = 116;
+      doc.text(T(`${[...u.cities].join(", ")}  -  ${u.progs.length} programme${u.progs.length === 1 ? "" : "s"} in your list`), M, 50 + nameLines.length * 19);
+      y = 126;
+      if (u.url) {
+        set(9, "bold", C.ink);
+        doc.text("University website", M, y);
+        set(9, "normal", C.primary);
+        doc.textWithLink(T(u.url.replace(/^https?:\/\//, "")), M + 105, y, { url: u.url });
+        y += 18;
+      }
 
-      table(
-        null,
-        [
-          ["Degree", r.degree, "Duration", r.duration || "-"],
-          ["Language", r.language, "Starts", r.start || "-"],
-          ["Tuition", r.tuition, "Semester fee", r.semesterFee ? `EUR ${r.semesterFee}` : "-"],
-          ["Next deadline", r.next ? `${fmtDate(r.next.date)} (${r.next.days} days)` : r.rolling ? "No fixed deadline" : "See website", "English", langSummary(r) || "-"],
-          ["Subject", r.subject || "-", "German", r.deLevel || "-"],
-        ],
-        { theme: "plain", styles: { fontSize: 9, cellPadding: 4, textColor: C.ink }, columnStyles: { 0: { fontStyle: "bold", textColor: C.muted, cellWidth: 80 }, 2: { fontStyle: "bold", textColor: C.muted, cellWidth: 80 } }, alternateRowStyles: {} }
-      );
+      u.progs.forEach((r, pi) => {
+        num++;
+        if (pi > 0) {
+          if (y > PH() * 0.55) {
+            doc.addPage("a4", "portrait");
+            y = M;
+          } else y += 14;
+        }
+        r.page = page();
+        // programme title bar
+        const titleLines = doc.splitTextToSize(T(r.name), PW() - 2 * M - 24);
+        const barH = 26 + titleLines.length * 15;
+        ensure(barH + 120);
+        r.page = page();
+        doc.setFillColor(...C.primarySoft);
+        doc.roundedRect(M, y, PW() - 2 * M, barH, 6, 6, "F");
+        doc.setFillColor(...C.primary);
+        doc.rect(M, y, 4, barH, "F");
+        set(8, "bold", C.primary);
+        doc.text(T(`PROGRAMME ${num} OF ${recs.length}  -  ${r.degree.toUpperCase()}${r.subject ? "  -  " + r.subject.toUpperCase() : ""}`), M + 14, y + 14);
+        set(13, "bold", C.ink);
+        doc.text(titleLines, M + 14, y + 30);
+        y += barH + 20;
 
-      if (S.has("deadlines")) {
-        heading("Application deadlines");
-        if (r.deadlines.length)
-          table(
-            ["Semester", "Applicants from", "Opens", "Deadline", "Days left"],
-            r.deadlines.map((d) => [d.semester || "-", d.who || "All applicants", d.opens ? fmtDate(d.opens) : "-", { content: fmtDate(d.date), styles: { fontStyle: "bold", textColor: C.ink } }, { content: String(d.days), styles: d.days <= 30 ? { textColor: C.danger, fontStyle: "bold" } : {} }])
-          );
-        else para(r.deadlineText || "No deadline listed - check the programme website.");
-      }
-      if (S.has("requirements")) {
-        heading("Academic requirements");
-        para(r.academic || "Not specified - see the programme website.");
-        if (r.gre || r.gmat) para(`Note: ${[r.gre && "GRE", r.gmat && "GMAT"].filter(Boolean).join(" / ")} is mentioned in the requirements.`, { style: "bold", color: C.ink });
-        if (r.applyVia || r.applyText) {
-          sub("How to apply");
-          para([r.applyVia, r.applyText].filter(Boolean).join(" - "));
-        }
-      }
-      if (S.has("language")) {
-        heading("Language requirements");
-        sub(`English: ${r.enLevel || "see below"}`);
-        if (r.enCerts.length) table(["Accepted certificate", "Minimum"], r.enCerts, { columnStyles: { 1: { cellWidth: 120 } } });
-        else para(r.enText || "Not specified.");
-        sub(`German: ${r.deLevel || "not specified"}`);
-        if (r.deText && r.deText !== r.deLevel) para(r.deText);
-        if (r.langExempt) {
-          sub("Exemptions");
-          para(r.langExempt);
-        }
-      }
-      if (S.has("costs")) {
-        heading("Costs & funding");
-        const rows = [
-          ["Tuition per semester", r.tuition],
-          ["Semester contribution", r.semesterFee ? `EUR ${r.semesterFee}` : "-"],
-          ["Living costs per month", r.living ? r.living : "-"],
-        ];
-        r.livingItems.forEach((x) => rows.push(["  " + x.split(":")[0], x.split(":").slice(1).join(":").trim()]));
-        table(null, rows, { theme: "grid", columnStyles: { 0: { fontStyle: "bold", cellWidth: 150 } } });
-        if (!r.livingItems.length && r.livingText) para(r.livingText, { size: 9 });
-        r.otherCosts.forEach((x) => {
-          sub(x.label);
-          para(x.text, { size: 9 });
-        });
-      }
-      if (S.has("checklist")) {
-        heading("Document checklist");
+        // action buttons
+        let bx = M;
+        bx += button(r.applyVia === "uni-assist" ? "Apply via uni-assist  >" : "Apply here  >", r.applyUrl, bx, y, C.primary) + 8;
+        if (r.courseUrl) bx += button("Programme website", r.courseUrl, bx, y) + 8;
+        button("DAAD page", r.daadUrl, bx, y);
+        y += 16;
+
         table(
           null,
-          r.checklist.map((c) => ["", { content: c.title, styles: { fontStyle: "bold", textColor: C.ink } }, c.desc]),
-          {
-            theme: "plain",
-            styles: { fontSize: 9, cellPadding: 4 },
-            columnStyles: { 0: { cellWidth: 20 }, 1: { cellWidth: 170 } },
-            didDrawCell: (h) => {
-              if (h.section !== "body" || h.column.index !== 0) return;
-              const done = r.checklist[h.row.index].done;
-              const x = h.cell.x + 5;
-              const yy = h.cell.y + 4;
-              doc.setDrawColor(...(done ? C.ok : C.muted));
-              doc.setLineWidth(0.8);
-              doc.rect(x, yy, 9, 9);
-              if (done) {
-                doc.setDrawColor(...C.ok);
-                doc.setLineWidth(1.4);
-                doc.lines([[2.5, 3], [5, -6.5]], x + 1.8, yy + 4.5);
-              }
-            },
-          }
+          [
+            ["Degree", r.degree, "Duration", r.duration || "-"],
+            ["Language", r.language, "Starts", r.start || "-"],
+            ["Tuition", r.tuition, "Semester fee", r.semesterFee ? `EUR ${r.semesterFee}` : "-"],
+            ["Next deadline", r.next ? `${fmtDate(r.next.date)} (${r.next.days} days left)` : r.rolling ? "No fixed deadline" : "See programme website", "English", langSummary(r) || r.enLevel || "-"],
+            ["City", r.city, "German", r.deLevel || "-"],
+          ],
+          { theme: "plain", styles: { fontSize: 9, cellPadding: 3.5, textColor: C.ink }, columnStyles: { 0: { fontStyle: "bold", textColor: C.muted, cellWidth: 78 }, 2: { fontStyle: "bold", textColor: C.muted, cellWidth: 78 } }, alternateRowStyles: {} }
         );
-      }
-      if (S.has("description") && (r.description || r.organisation)) {
-        heading("About the programme");
-        para(r.description, { size: 9 });
-        if (r.organisation) {
-          sub("Course organisation");
-          para(r.organisation, { size: 9 });
+
+        if (S.has("deadlines")) {
+          heading("Application deadlines");
+          if (r.deadlines.length) {
+            table(
+              ["Semester", "Applicants from", "Opens", "Deadline", "Days left"],
+              r.deadlines.map((d) => [(d.semester || "-") + (d.tx ? " *" : ""), d.who || "All applicants", d.opens ? fmtDate(d.opens) : "-", { content: fmtDate(d.date), styles: { fontStyle: "bold", textColor: C.ink } }, { content: String(d.days), styles: d.days <= 30 ? { textColor: C.danger, fontStyle: "bold" } : {} }])
+            );
+            if (r.deadlines.some((d) => d.tx)) para("* Read from the university's description - please verify on the official page.", { size: 7.5, color: C.muted });
+          } else para(r.deadlineText || "No deadline listed - check the programme website.");
         }
-      }
-      if (S.has("services") && r.services.length) {
-        heading("Student services & support");
-        r.services.forEach((x) => {
-          sub(x.label);
-          para(x.text, { size: 9 });
-        });
-      }
-      if (S.has("contacts")) {
-        heading("Contacts & links");
-        if (r.faculty) para(`${r.uni} - ${r.faculty}`, { color: C.ink });
-        if (r.address) para(r.address);
-        if (r.email) link("Email", "mailto:" + r.email);
-        link("Programme website", r.courseUrl);
-        link("University website", r.uniUrl);
-        link("DAAD page", r.daadUrl);
-        link("StudyBahn page", r.siteUrl);
-      }
+        if (S.has("requirements")) {
+          heading("Academic requirements");
+          para(r.academic || "Not specified - see the programme website.");
+          if (r.gre || r.gmat) para(`Note: ${[r.gre && "GRE", r.gmat && "GMAT"].filter(Boolean).join(" / ")} is mentioned in the requirements.`, { style: "bold", color: C.ink });
+        }
+        if (S.has("language")) {
+          heading("Language requirements");
+          sub(`English: ${r.enLevel || "see below"}`);
+          if (r.enCerts.length) table(["Accepted certificate", "Minimum score"], r.enCerts, { columnStyles: { 1: { cellWidth: 170 } } });
+          else para(r.enText || "Not specified.");
+          sub(`German: ${r.deLevel || "not specified"}`);
+          if (r.deText && r.deText !== r.deLevel) para(r.deText);
+          if (r.langExempt) {
+            sub("Exemptions");
+            para(r.langExempt);
+          }
+        }
+        if (S.has("requirements") && (r.applyVia || r.applyText)) {
+          heading("How to apply");
+          para([r.applyVia, r.applyText].filter(Boolean).join(" - "));
+          linkLine("Application portal", r.applyUrl);
+        }
+        if (S.has("costs")) {
+          heading("Costs & funding");
+          const rows = [
+            ["Tuition per semester", r.tuition],
+            ["Semester contribution", r.semesterFee ? `EUR ${r.semesterFee}` : "-"],
+            ["Living costs per month", r.living || "-"],
+          ];
+          r.livingItems.forEach((x) => rows.push(["   " + x.split(":")[0], x.split(":").slice(1).join(":").trim()]));
+          table(null, rows, { columnStyles: { 0: { fontStyle: "bold", cellWidth: 150 } } });
+          if (!r.livingItems.length && r.livingText) para(r.livingText, { size: 8.5 });
+          r.otherCosts.forEach((x) => {
+            sub(x.label);
+            para(x.text, { size: 8.5 });
+          });
+        }
+        if (S.has("checklist")) {
+          heading("Document checklist");
+          table(
+            null,
+            r.checklist.map((c) => ["", { content: c.title, styles: { fontStyle: "bold", textColor: C.ink } }, c.desc]),
+            {
+              theme: "plain",
+              styles: { fontSize: 8.5, cellPadding: 3.5 },
+              columnStyles: { 0: { cellWidth: 20 }, 1: { cellWidth: 170 } },
+              didDrawCell: (h) => {
+                if (h.section !== "body" || h.column.index !== 0) return;
+                const done = r.checklist[h.row.index].done;
+                const x = h.cell.x + 5;
+                const yy = h.cell.y + 3.5;
+                doc.setDrawColor(...(done ? C.ok : C.muted));
+                doc.setLineWidth(0.8);
+                doc.rect(x, yy, 9, 9);
+                if (done) {
+                  doc.setLineWidth(1.4);
+                  doc.lines([[2.5, 3], [5, -6.5]], x + 1.8, yy + 4.5);
+                }
+              },
+            }
+          );
+        }
+        if (S.has("description") && (r.description || r.organisation)) {
+          heading("About the programme");
+          para(r.description, { size: 8.5 });
+          if (r.organisation) {
+            sub("Course organisation");
+            para(r.organisation, { size: 8.5 });
+          }
+        }
+        if (S.has("services") && r.services.length) {
+          heading("Student services & support");
+          r.services.forEach((x) => {
+            sub(x.label);
+            para(x.text, { size: 8.5 });
+          });
+        }
+        if (S.has("contacts")) {
+          heading("Contact");
+          if (r.faculty) para(r.faculty, { color: C.ink });
+          if (r.address) para(r.address);
+          if (r.email) linkLine("Email", "mailto:" + r.email);
+          linkLine("Programme website", r.courseUrl);
+          linkLine("Application portal", r.applyUrl);
+        }
+      });
     });
 
+    // ---------- final overview table (landscape)
+    doc.addPage("a4", "landscape");
+    const tablePage = page();
+    doc.setFillColor(...C.navy);
+    doc.rect(0, 0, PW(), 64, "F");
+    flagStripe(64);
+    set(16, "bold", [255, 255, 255]);
+    doc.text("All programmes at a glance", M, 34);
+    set(9, "normal", [205, 210, 220]);
+    doc.text(T(`${recs.length} programmes at ${unis.length} universities - click "Open portal" to apply or the programme name for its website`), M, 50);
+    y = 84;
+    const rows = [];
+    let i = 0;
+    unis.forEach((u) =>
+      u.progs.forEach((r) => {
+        i++;
+        const dls = r.deadlines.length ? r.deadlines.slice(0, 4).map(dlShort).join("\n") : r.rolling ? "No fixed deadline" : (r.deadlineText || "See website").slice(0, 140);
+        const en = [r.enLevel && `Level ${r.enLevel}`, r.ielts && `IELTS ${r.ielts}`, r.toefl && `TOEFL ${r.toefl}`].filter(Boolean).join("\n") || r.enText.slice(0, 80) || "-";
+        const acad = (r.academic || "-").replace(/\n+/g, " ").replace(/\s+/g, " ");
+        const tuitionShort = r.tuition.length > 90 ? r.tuition.slice(0, 87) + "..." : r.tuition;
+        const costs = [tuitionShort, r.semesterFee && `Sem. fee EUR ${r.semesterFee}`, r.living && `Living ${r.living}/mo`].filter(Boolean).join("\n");
+        const tests = [r.gre && "GRE", r.gmat && "GMAT"].filter(Boolean).join(", ");
+        rows.push({
+          r,
+          cells: [
+            String(i),
+            { content: `${r.name}\n\n${r.uni}`, styles: { textColor: C.ink, fontStyle: "bold" } },
+            `${r.degree}\n${r.language}\n${r.duration}\n${r.start}`,
+            { content: dls, styles: r.next && r.next.days <= 30 ? { textColor: C.danger } : {} },
+            en,
+            r.deLevel || "-",
+            (acad.length > 420 ? acad.slice(0, 417) + "..." : acad) + (tests ? `\n[${tests} mentioned]` : ""),
+            costs,
+            { content: `${r.applyVia || "See website"}\n\nOpen portal >`, styles: { textColor: C.primary, fontStyle: "bold" } },
+          ],
+        });
+      })
+    );
+    const rowRec = new Map();
+    const overviewBody = rows.map((x) => {
+      const cells = x.cells.map((c) => (c && typeof c === "object" ? Object.assign({}, c, { content: T(c.content) }) : T(c)));
+      rowRec.set(cells, x.r);
+      return cells;
+    });
+    doc.autoTable({
+      startY: y,
+      head: [["#", "University / Programme", "Degree / language / duration / start", "Deadlines", "English", "German", "Academic requirements", "Costs", "Apply"].map(T)],
+      body: overviewBody,
+      margin: { left: 24, right: 24, top: 30, bottom: 44 },
+      rowPageBreak: "avoid",
+      styles: { font: "helvetica", fontSize: 7.2, cellPadding: 4, textColor: C.ink2, lineColor: C.line, lineWidth: 0.5, overflow: "linebreak", valign: "top" },
+      headStyles: { fillColor: C.navy, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7.5 },
+      alternateRowStyles: { fillColor: C.soft },
+      theme: "grid",
+      columnStyles: { 0: { cellWidth: 18 }, 1: { cellWidth: 128 }, 2: { cellWidth: 82 }, 3: { cellWidth: 98 }, 4: { cellWidth: 66 }, 5: { cellWidth: 48 }, 6: { cellWidth: 196 }, 7: { cellWidth: 82 }, 8: { cellWidth: 76 } },
+      didDrawCell: (h) => {
+        if (h.section !== "body") return;
+        const r = rowRec.get(h.row.raw) || (rows[h.row.index] || {}).r;
+        if (!r) return;
+        if (h.column.index === 8 && r.applyUrl) doc.link(h.cell.x, h.cell.y, h.cell.width, h.cell.height, { url: r.applyUrl });
+        if (h.column.index === 1 && (r.courseUrl || r.daadUrl)) doc.link(h.cell.x, h.cell.y, h.cell.width, h.cell.height, { url: r.courseUrl || r.daadUrl });
+      },
+    });
+    y = doc.lastAutoTable.finalY + 10;
+    if (recs.some((r) => r.deadlines.some((d) => d.tx))) {
+      set(7.5, "normal", C.muted);
+      doc.text("* Deadline read from the university's description text - please verify on the official page.", 24, Math.min(y + 4, PH() - 50));
+    }
+
+    // ---------- contents (written last, now that page numbers are known)
+    doc.setPage(1);
+    y = tocTop;
+    let tocPage = 1;
+    const tocLine = (label, target, o) => {
+      if (y > PH() - M - 30) {
+        tocPage++;
+        doc.setPage(tocPage);
+        y = M + 10;
+      }
+      const x = M + (o.indent || 0);
+      set(o.size || 9.5, o.bold ? "bold" : "normal", o.color || C.ink);
+      const maxW = PW() - x - M - 40;
+      let text = T(label);
+      while (doc.getTextWidth(text) > maxW && text.length > 4) text = text.slice(0, -4) + "...";
+      doc.textWithLink(text, x, y, { pageNumber: target });
+      set(9, "normal", C.muted);
+      doc.text(String(target), PW() - M, y, { align: "right" });
+      doc.setDrawColor(...C.line);
+      doc.setLineDashPattern([1, 2], 0);
+      doc.line(x + doc.getTextWidth(text) + 6, y - 2, PW() - M - 18, y - 2);
+      doc.setLineDashPattern([], 0);
+      y += o.gap || LH;
+    };
+    unis.forEach((u, ui) => {
+      tocLine(`${ui + 1}.  ${u.name}`, u.page, { bold: true, color: C.navy });
+      u.progs.forEach((r) => tocLine(`${r.name}  (${r.degree})`, r.page, { indent: 18, size: 9, color: C.ink2 }));
+      y += 2;
+    });
+    y += 4;
+    tocLine("All programmes at a glance (comparison table with portal links)", tablePage, { bold: true, color: C.primary });
+
     // ---------- footer on every page
-    const n = doc.internal.getNumberOfPages();
+    const n = page();
     for (let p = 1; p <= n; p++) {
       doc.setPage(p);
+      const w = PW();
+      const h = PH();
       doc.setDrawColor(...C.line);
       doc.setLineWidth(0.5);
-      doc.line(M, H - 30, W - M, H - 30);
+      doc.line(M, h - 30, w - M, h - 30);
       set(7.5, "normal", C.muted);
-      doc.text(T(`StudyBahn - generated ${fmtDate(new Date())} - data: DAAD. Always confirm on the university's website.`), M, H - 18);
-      doc.text(`Page ${p} of ${n}`, W - M, H - 18, { align: "right" });
+      doc.text(T(`StudyBahn - generated ${fmtDate(new Date())} - data: DAAD. Always confirm on the university's website.`), M, h - 18);
+      doc.text(`Page ${p} of ${n}`, w - M, h - 18, { align: "right" });
     }
     return doc.output("blob");
   }

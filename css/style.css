@@ -2415,3 +2415,38 @@ h4 {
 a.chip:hover {
   text-decoration: none;
 }
+
+/* nested subjects under a ticked subject area */
+.sub-opts {
+  margin: 2px 0 8px 17px;
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--primary) 35%, transparent);
+  display: grid;
+  gap: 1px;
+}
+.sub-opts .opt {
+  font-size: 13.5px;
+  padding: 5px 8px;
+}
+.sub-note {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--primary-strong);
+  padding: 4px 8px 2px;
+}
+.fgroup .hint {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 8px 2px 0;
+}
+.sub-opts.scroll {
+  max-height: 340px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.sub-opts .sub-note {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
+}
