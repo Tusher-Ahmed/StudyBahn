@@ -2450,3 +2450,44 @@ a.chip:hover {
   background: var(--bg);
   z-index: 1;
 }
+
+/* late arrival section */
+.quote {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--gold);
+  background: var(--bg-soft);
+  border-radius: 0 10px 10px 0;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.intakes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.intake {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  font-size: 13.5px;
+  align-content: start;
+}
+.intake .badge {
+  justify-self: start;
+}
+.intake.first {
+  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  background: var(--primary-soft);
+}
+.panel.ask {
+  background: linear-gradient(135deg, var(--primary-soft), var(--bg-elev));
+}
+.mail-preview {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 13px;
+  margin: 0;
+}

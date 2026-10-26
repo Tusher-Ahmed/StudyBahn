@@ -42,6 +42,7 @@
               <a href="#overview">${icon("info")} Overview</a>
               <a href="#requirements">${icon("check")} Requirements</a>
               <a href="#deadlines">${icon("calendar")} Deadlines</a>
+              <a href="#remote">${icon("globe")} Late arrival</a>
               <a href="#checklist">${icon("doc")} Checklist</a>
               <a href="#costs">${icon("euro")} Costs</a>
               <a href="#life">${icon("home")} Student life</a>
@@ -49,6 +50,7 @@
             ${overview(d)}
             ${requirements(d, m, prof)}
             ${deadlineSection(d, dls)}
+            ${remoteSection(d, dls)}
             ${checklist(d)}
             ${costs(d)}
             ${life(d)}
@@ -101,7 +103,7 @@
       ["clock", "Duration", esc(d.dur || "—")],
       ["lang", "Language", esc(UH.langLabel(d.l))],
       ["euro", "Tuition", esc(isFree(d) ? "Free" : tuition)],
-      ["calendar", "Starts", esc((d.b || "—").replace(/ semester/gi, ""))],
+      ["calendar", "Classes start", (() => { const s = UH.nextIntake(d); return s ? `${fmtDate(s.date)}<small>${esc(s.name)} · lectures ~${esc(s.lectures)}</small>` : esc(d.b || "—"); })()],
     ];
     return `<div class="facts">${f.map(([i, k, v]) => `<div class="fact"><div class="k">${icon(i)} ${k}</div><div class="v">${v}</div></div>`).join("")}
       <div class="fact deadline"><div class="k">${icon("bell")} Next deadline</div><div class="v">${nextHtml}</div></div></div>`;
@@ -168,7 +170,7 @@
     const flags = [];
     if (d.uniAssist) flags.push(`<span class="badge badge-info">${icon("doc")} Apply via uni-assist</span>`);
     else if (d.applyVia) flags.push(`<span class="badge badge-ok">${icon("check")} Apply to university</span>`);
-    if (d.gre) flags.push(`<span class="badge badge-gold">${icon("alert")} GRE mentioned</span>`);
+    flags.push(UH.greNeeded(d) ? `<span class="badge badge-danger">${icon("alert")} GRE: ${esc(UH.greLabel(d))}</span>` : d.greStatus === "rec" ? `<span class="badge badge-gold">${icon("info")} GRE: recommended / optional</span>` : `<span class="badge badge-ok">${icon("check")} GRE not required</span>`);
     if (d.gmat) flags.push(`<span class="badge badge-gold">${icon("alert")} GMAT mentioned</span>`);
     if (d.online) flags.push(`<span class="badge badge-ok">${icon("globe")} Fully online application</span>`);
     if (m.status === "ok") flags.push(`<span class="badge badge-ok">${icon("sparkle")} Matches your language profile</span>`);
@@ -177,6 +179,7 @@
         <h2>Admission requirements</h2>
         <p class="lede">What you need to be admitted, as published by the university.</p>
         ${flags.length ? `<div class="flags">${flags.join("")}</div>` : ""}
+        ${d.greNote ? `<div class="notice ${UH.greNeeded(d) ? "warn" : ""}">${icon("alert")}<span><b>GRE — ${esc(UH.greLabel(d))}.</b> The university says: “${esc(d.greNote)}”</span></div>` : ""}
         <div class="panel"><h3>${icon("cap")} Academic requirements</h3><div class="rich">${d.academic || '<span class="muted">Not specified — see the official programme page.</span>'}</div></div>
         <div class="req-grid">
           ${langPanel("English", d.english, "en", prof)}
@@ -202,6 +205,7 @@
             <div>
               <h4>${esc(x.semester ? x.semester.replace(/^\w/, (c) => c.toUpperCase()) : "Application deadline")} ${i === 0 ? '<span class="badge badge-gold">Next</span>' : ""}</h4>
               <div class="who">${x.who ? "For applicants from " + esc(x.who) : "All applicants"}${x.from ? ` · Applications open ${UH.fmtDM(x.from)}` : ""}</div>
+              ${(() => { const st = UH.semesterStart(x.semester, x.date); return st ? `<div class="who">${icon("cap")} Classes start <b>${fmtDate(st.date)}</b> (${esc(st.name)}, lectures usually from ${esc(st.lectures)})</div>` : ""; })()}
               <div style="margin-top:6px" class="row-gap"><span class="badge ${cls}">${label}</span>${x.tx ? `<span class="badge badge-muted" title="Read from the university's description — check the official page">Read from text · verify</span>` : ""}</div>
             </div>
             <div class="dl-count"><b>${x.days}</b><span>days left</span><br><button class="btn btn-ghost btn-sm" data-ics="${i}" style="margin-top:8px">${icon("calendar")} Add to calendar</button></div>
@@ -224,6 +228,98 @@
             : ""
         }
         <div class="notice warn">${icon("alert")}<span>Deadlines usually refer to when your application must be <b>received</b>. Visa appointments in many countries take months — start early.</span></div>
+      </section>`;
+  }
+
+  // Late arrival: online start, deferral, and the next intake as a fallback.
+  function intakesFrom(d, dls) {
+    const seen = new Map();
+    dls.forEach((x) => {
+      const st = UH.semesterStart(x.semester, x.date);
+      if (!st) return;
+      const k = st.date.getTime();
+      if (!seen.has(k) || x.date > seen.get(k).deadline) seen.set(k, { ...st, deadline: x.date });
+    });
+    return [...seen.values()].sort((a, b) => a.date - b.date);
+  }
+
+  function lateArrivalEmail(d, intake) {
+    const c = d.contact || {};
+    const subject = `Question about late arrival / online start – ${d.n}`;
+    const body = [
+      "Dear Admissions Team,",
+      "",
+      `I am planning to apply for the programme "${d.n}" at ${d.u}${intake ? ` for the ${intake.name}` : ""}.`,
+      "As an international applicant I need a student visa, and appointment and processing times can be long. Could you please let me know:",
+      "",
+      "1. If my visa is delayed, can I start the first semester online or remotely until I arrive?",
+      "2. What is the latest date I can arrive and enrol without losing my place?",
+      "3. If I cannot come at all, can my admission be deferred to the next intake, or would I need to re-apply?",
+      "",
+      "Thank you very much for your help.",
+      "",
+      "Kind regards,",
+      "[Your name]",
+      "[Applicant / application number, if you have one]",
+    ].join("\n");
+    return { to: c.email || "", subject, body, href: `mailto:${encodeURIComponent(c.email || "")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` };
+  }
+
+  function remoteSection(d, dls) {
+    const quotes = (list) => list.map((q) => `<blockquote class="quote">“${esc(q)}”</blockquote>`).join("");
+    const code = d.remote || d.rm;
+    const tone = code === "full" || code === "hybrid" ? "ok" : code ? "unknown" : "no";
+    const intakes = intakesFrom(d, dls);
+    const mail = lateArrivalEmail(d, intakes[0]);
+    const beg = d.b || "";
+    const onlyOne = /winter/i.test(beg) !== /summer/i.test(beg);
+    return `
+      <section class="section" id="remote">
+        <h2>Can't be in Germany when the semester starts?</h2>
+        <p class="lede">Visa appointments can take months. Here's what this programme says about studying online, arriving late, or deferring your place.</p>
+        <div class="req-grid">
+          <div class="panel">
+            <h3>${icon("globe")} Online / remote study</h3>
+            <div class="yours ${tone}" style="margin:0 0 12px">${icon(tone === "ok" ? "check" : tone === "no" ? "alert" : "info")} <span><b>${esc(UH.remoteLabel(d))}</b> — ${esc(UH.remoteHint(d))}</span></div>
+            ${d.studyMode ? `<div class="contact-line">${icon("doc")}<span><b>Mode of study:</b> ${esc(d.studyMode)}</span></div>` : ""}
+            ${d.attendance ? `<div class="contact-line">${icon("pin")}<span><b>Attendance in Germany:</b> ${esc(d.attendance)}</span></div>` : ""}
+            ${(d.onlineNotes || []).length ? `<div class="muted" style="font-size:13px;margin-top:6px">The university says:</div>${quotes(d.onlineNotes)}` : ""}
+            ${!code ? `<p class="muted" style="font-size:13.5px;margin:0">The university doesn't list an online or hybrid option. Assume you must attend in person from the start — but it's worth asking.</p>` : ""}
+          </div>
+          <div class="panel">
+            <h3>${icon("calendar")} Deferral &amp; late arrival</h3>
+            ${
+              (d.deferNotes || []).length
+                ? `<div class="yours ${d.deferReal ? "ok" : "unknown"}" style="margin:0 0 10px">${icon(d.deferReal ? "check" : "info")} <span>${d.deferReal ? "<b>Mentioned by the university</b> — read the wording below" : "<b>Visa timing advice</b> — no explicit deferral option"}</span></div>${quotes(d.deferNotes)}`
+                : `<div class="yours unknown" style="margin:0 0 10px">${icon("info")} <span><b>Not stated</b> by the university</span></div>
+                   <p class="muted" style="font-size:13.5px;margin:0">German universities usually don't hold a place automatically: if you can't come, you normally re-apply for the next intake. Some allow enrolment until a few weeks into lectures, or keep your admission valid for one semester — always ask before your visa appointment.</p>`
+            }
+          </div>
+        </div>
+        <div class="panel">
+          <h3>${icon("arrow")} Your intakes &amp; plan B</h3>
+          ${
+            intakes.length
+              ? `<div class="intakes">${intakes
+                  .slice(0, 3)
+                  .map(
+                    (it, i) => `<div class="intake ${i === 0 ? "first" : ""}"><span class="badge ${i === 0 ? "badge-primary" : "badge-gold"}">${i === 0 ? "Next intake" : "Plan B"}</span>
+                      <b>${esc(it.name)}</b><span>Classes start ${fmtDate(it.date)} · lectures ~${esc(it.lectures)}</span><span class="muted">Apply by ${fmtDate(it.deadline)}</span></div>`
+                  )
+                  .join("")}</div>`
+              : `<p class="muted" style="margin:0">No dated intakes found — check the official page.</p>`
+          }
+          ${onlyOne ? `<div class="notice warn">${icon("alert")}<span>This programme only starts in the <b>${/winter/i.test(beg) ? "winter" : "summer"} semester</b>. If you miss it, the next chance is usually <b>a full year later</b>.</span></div>` : ""}
+        </div>
+        <div class="panel ask">
+          <h3>${icon("mail")} Ask the admissions office</h3>
+          <p class="muted" style="margin:0 0 12px;font-size:14px">The answer is often "yes, if you ask early". We've written the email for you: it asks about online start, the latest arrival date, and deferral.</p>
+          <div class="row-gap">
+            ${mail.to ? `<a class="btn btn-primary btn-sm" href="${esc(mail.href)}">${icon("mail")} Open email to ${esc(mail.to)}</a>` : ""}
+            <button class="btn btn-ghost btn-sm" id="copy-mail">${icon("doc")} Copy email text</button>
+          </div>
+          <details class="acc" style="margin-top:12px"><summary>Preview the email</summary><div class="rich"><pre class="mail-preview">${esc(`Subject: ${mail.subject}\n\n${mail.body}`)}</pre></div></details>
+        </div>
       </section>`;
   }
 
@@ -307,7 +403,7 @@
       ${
         sim.length
           ? `<div class="panel"><h3>${icon("sparkle")} Similar programmes</h3><div class="similar">${sim
-              .map((p) => `<a href="program.html?id=${p.id}"><b>${esc(p.n)}</b><span>${esc(p.u)} · ${esc(p.c)}</span></a>`)
+              .map((p) => `<a href="program.html?id=${p.id}" target="_blank" rel="noopener"><b>${esc(p.n)}</b><span>${esc(p.u)} · ${esc(p.c)}</span></a>`)
               .join("")}</div></div>`
           : ""
       }
@@ -358,6 +454,20 @@
       e.currentTarget.classList.toggle("is-on", on);
       e.currentTarget.querySelector("span").textContent = on ? "In export list" : "Add to export";
       UH.toast(on ? "Added — open Export in the menu to download Excel / PDF" : "Removed from export list");
+    };
+    // the page is rendered by script, so jump to #section links ourselves
+    if (location.hash.length > 1) {
+      const target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+      if (target) setTimeout(() => target.scrollIntoView(), 60);
+    }
+    $("#copy-mail").onclick = async () => {
+      const m = lateArrivalEmail(d, intakesFrom(d, dls)[0]);
+      try {
+        await navigator.clipboard.writeText(`${m.to ? "To: " + m.to + "\n" : ""}Subject: ${m.subject}\n\n${m.body}`);
+        UH.toast("Email copied — paste it into your mail app");
+      } catch (e) {
+        UH.toast("Couldn't copy — open the preview and copy it manually");
+      }
     };
     $("#share-btn").onclick = async () => {
       const url = location.href;

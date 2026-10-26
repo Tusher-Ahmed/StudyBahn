@@ -57,7 +57,7 @@
               <div class="dl-card ${d.state === "soon" ? "soon" : ""}">
                 <div class="dl-cal"><div class="m">${d.date.toLocaleString("en", { month: "short" }).toUpperCase()}</div><div class="d">${d.date.getDate()}</div><div class="y">${d.date.getFullYear()}</div></div>
                 <div>
-                  <h4><a href="program.html?id=${p.id}">${esc(p.n)}</a></h4>
+                  <h4><a href="program.html?id=${p.id}" target="_blank" rel="noopener">${esc(p.n)}</a></h4>
                   <div class="who">${esc(p.u)} · ${esc(p.c)}${d.semester ? " · " + esc(d.semester) : ""}</div>
                   ${d.state === "notyet" ? `<div style="margin-top:6px"><span class="badge badge-info">Opens ${fmtDate(d.opens)}</span></div>` : ""}
                 </div>
@@ -71,7 +71,7 @@
         ${
           none.length
             ? `<div class="month"><h3>No fixed date</h3><div class="panel">${none
-                .map((p) => `<div class="contact-line">${icon("infinity")}<span><a href="program.html?id=${p.id}">${esc(p.n)}</a> <span class="muted">· ${esc(p.u)} — check the programme page</span></span></div>`)
+                .map((p) => `<div class="contact-line">${icon("infinity")}<span><a href="program.html?id=${p.id}" target="_blank" rel="noopener">${esc(p.n)}</a> <span class="muted">· ${esc(p.u)} — check the programme page</span></span></div>`)
                 .join("")}</div></div>`
             : ""
         }
@@ -90,7 +90,7 @@
         <article class="card">
           ${avatar(p.u)}
           <div>
-            <h3><a href="program.html?id=${p.id}">${esc(p.n)}</a></h3>
+            <h3><a href="program.html?id=${p.id}" target="_blank" rel="noopener">${esc(p.n)}</a></h3>
             <div class="uni"><span>${icon("cap")} ${esc(p.u)}</span><span>${icon("pin")} ${esc(p.c)}</span></div>
             <div class="tags">
               <span class="badge badge-primary">${degreeName(p.d)}</span>
@@ -131,7 +131,8 @@
       ["Living costs", (p) => (p.live ? `<span class="${p.live === minLive && list.length > 1 ? "best" : ""}">${p.liveLo ? `€${p.liveLo}–${p.live}` : "€" + p.live} / month</span>` : "—")],
       ["English", (p) => (p.en ? `${esc(p.en)}${p.ielts ? ` · <span class="${p.ielts === minIelts && list.length > 1 ? "best" : ""}">IELTS ${p.ielts}</span>` : ""}${p.toefl ? ` · TOEFL ${p.toefl}` : ""}` : "—")],
       ["German", (p) => (p.de ? esc(p.de) : '<span class="best">Not required</span>')],
-      ["GRE", (p) => (p.gre ? "Mentioned" : "—")],
+      ["GRE", (p) => esc(UH.greLabel(p))],
+      ["Classes start", (p) => { const s = UH.nextIntake(p); return s ? `<b>${fmtDate(s.date)}</b><br><span class="muted">${esc(s.name)}</span>` : "—"; }],
       ["Apply via", (p) => (p.ua ? "uni-assist" : "University")],
       ["Starts", (p) => esc(p.b || "—")],
       [
@@ -157,7 +158,7 @@
         <table class="cmp-table">
           <thead><tr><th scope="row"></th>${list
             .map(
-              (p) => `<th><a href="program.html?id=${p.id}">${esc(p.n)}</a><div style="margin-top:8px" class="row-gap"><button class="btn btn-ghost btn-sm" data-uncmp="${p.id}">${icon("x")} Remove</button></div></th>`
+              (p) => `<th><a href="program.html?id=${p.id}" target="_blank" rel="noopener">${esc(p.n)}</a><div style="margin-top:8px" class="row-gap"><button class="btn btn-ghost btn-sm" data-uncmp="${p.id}">${icon("x")} Remove</button></div></th>`
             )
             .join("")}</tr></thead>
           <tbody>${rows.map(([label, fn]) => `<tr><th scope="row">${label}</th>${list.map((p, i) => `<td>${fn(p, i)}</td>`).join("")}</tr>`).join("")}</tbody>

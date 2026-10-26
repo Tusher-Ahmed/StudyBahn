@@ -227,6 +227,92 @@ def free_text_periods(t):
     return uniq
 
 
+ONLINE_RE = re.compile(
+    r"hybrid|blended|distance learning|(?:study|studies|start|begin|attend\w*|participat\w*|follow)\b[^.]{0,40}\b(?:online|remotely|from (?:your )?home)"
+    r"|(?:online|hybrid|remote\w*)[^.]{0,80}home country|home country[^.]{0,80}(?:online|hybrid|remote\w*)"
+    r"|online (?:format|semester|start|participation|attendance|lectures|teaching|classes)"
+    r"|remote (?:start|study|studies|participation|learning)|virtual (?:classroom|semester|lectures)",
+    re.I,
+)
+NOT_ONLINE_RE = re.compile(r"online application|apply online|online portal|online self-assessment|online interview|online test|online platform for applic|application (?:is|must be) (?:submitted|made) online", re.I)
+DEFER_RE = re.compile(
+    r"deferr?al|defer (?:your |the |their )?(?:admission|start|studies|place|enrol\w*|offer)|postpon\w* (?:your |the |their )?(?:start|studies|admission|enrol\w*)"
+    r"|admission (?:is |remains |will remain )?(?:also )?valid for (?:the )?(?:following|next|subsequent)|admission also valid for"
+    r"|late arrival|arriv\w* late|start (?:in|at) a later semester|visa (?:delay|processing time|problems?)|delays? (?:in|with|due to) (?:the |your )?visa",
+    re.I,
+)
+
+
+REAL_DEFER_RE = re.compile(
+    r"deferr?al|defer (?:your |the |their )?(?:admission|start|studies|place|enrol\w*|offer)|postpon\w* (?:your |the |their )?(?:start|studies|admission|enrol\w*)"
+    r"|valid for (?:the )?(?:following|next|subsequent)|also valid for the (?:winter|summer)|late arrival|arriv\w* late|start (?:in|at) a later semester",
+    re.I,
+)
+
+
+def _sentences(t):
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z])", t) if s.strip()]
+
+
+def remote_info(page):
+    """Can you start remotely / defer? Uses DAAD's 'Mode of study' and 'Phase(s) of attendance in Germany'
+    fields plus sentences from the programme text."""
+    pairs = {}
+    for pid in ("overview", "costs", "registration", "services"):
+        for label, val in dl_pairs(pane(page, pid)):
+            pairs.setdefault(label, val)
+    mode = text(pairs.get("Mode of study", ""))
+    attend_key = next((k for k in pairs if k.startswith("Phase(s) of attendance")), None)
+    attend = text(pairs.get(attend_key, "")) if attend_key else ""
+    online, defer = [], []
+    for label, val in pairs.items():
+        if label in ("Mode of study",) or (attend_key and label == attend_key):
+            continue
+        for s in _sentences(text(val)):
+            if len(s) > 400:
+                s = s[:397] + "..."
+            if ONLINE_RE.search(s) and not NOT_ONLINE_RE.search(s) and s not in online:
+                online.append(s)
+            if DEFER_RE.search(s) and not re.search(r"defer (?:part|all|some) of (?:your |the )?(?:tuition|fees)|tuition", s, re.I) and s not in defer:
+                defer.append(s)
+    m, a = mode.lower(), attend.lower()
+    if "fully online" in m or a.startswith("none"):
+        code = "full"
+    elif re.search(r"hybrid|more than 50|50 / 50", m) or any(
+        re.search(r"home country|from abroad|remotely|(?:first|initial) (?:semester|phase)[^.]{0,60}(?:online|hybrid)|(?:start|begin)\w*[^.]{0,30}online|hybrid (?:format|programme|semester|mode)", s, re.I) for s in online
+    ):
+        code = "hybrid"
+    elif re.search(r"less than 50|voluntary online", m) or a.startswith("yes, voluntary"):
+        code = "partly"
+    elif online:
+        code = "text"
+    else:
+        code = None
+    real = [x for x in defer if REAL_DEFER_RE.search(x) and not re.search(r"german (?:language )?courses?", x, re.I)]
+    return {"studyMode": mode, "attendance": attend, "onlineNotes": online[:4], "deferNotes": defer[:4], "remote": code, "deferReal": bool(real)}
+
+
+def gre_status(academic):
+    """How the admission text treats the GRE: (code, quoted sentences).
+    Codes: req = required, some = required for some applicants, waive = required but can be waived,
+    rec = recommended / optional; None when the GRE isn't mentioned."""
+    sents = re.findall(r"[^.;]*\b(?:GRE|Graduate Record Exam\w*)\b[^.;]*", academic)
+    if not sents:
+        return None, ""
+    note = " … ".join(x.strip() for x in sents)[:400]
+    s = " ".join(sents).lower()
+    strong = re.search(r"\bmust\b|mandatory|obligat|is required|are required", s)
+    if re.search(r"not (?:be )?(?:required|mandatory|necessary)|waiv|instead of (?:the )?gre|no gre (?:is )?(?:needed|required)", s):
+        code = "waive"
+    elif not strong and re.search(r"recommend|optional|advantage|beneficial|welcome|encourag|desirab|may (?:submit|provide|include)|can (?:submit|be submitted|improve)|voluntar|strengthen|increase", s):
+        code = "rec"
+    else:
+        code = "req"
+    if code == "req" and re.search(r"non-eu|only (?:for|applies)|applicants (?:from|with|who)|degree from|exempt|except|outside (?:the )?(?:eu|european)", s):
+        code = "some"
+    return code, note
+
+
 def parse_lang(raw):
     """English/German skills dd -> {level, certs:{name:score}, text}."""
     t = text(raw)
@@ -370,10 +456,12 @@ def parse_detail(cid, page):
     if mc:
         d["geo"] = [float(mc.group(1)), float(mc.group(2))]
     d["contact"] = contact(page)
+    d.update(remote_info(page))
     d["logo"] = logo(page)
     d["daadUrl"] = DAAD_DETAIL.format(cid)
     d["gre"] = bool(re.search(r"\bGRE\b", text(reg.get("Academic admission requirements", ""))))
     d["gmat"] = bool(re.search(r"\bGMAT\b", text(reg.get("Academic admission requirements", ""))))
+    d["greStatus"], d["greNote"] = gre_status(text(reg.get("Academic admission requirements", "")))
     return d
 
 
@@ -424,6 +512,9 @@ def main():
             row["ielts"] = num_from_cert(en.get("certs", {}), "IELTS")
             row["toefl"] = num_from_cert(en.get("certs", {}), "TOEFL", minimum=30)
             row["gre"] = det["gre"]
+            row["gr"] = det["greStatus"]
+            row["rm"] = det["remote"]
+            row["df"] = 1 if det["deferReal"] else 0
             row["ua"] = det.get("uniAssist", False)
             row["eur"] = det.get("tuitionEur")
             row["live"] = (det.get("living") or {}).get("total")

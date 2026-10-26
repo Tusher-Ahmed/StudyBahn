@@ -96,6 +96,17 @@
       langExempt: htmlToText(d.langExempt),
       gre: !!d.gre,
       gmat: !!d.gmat,
+      greStatus: UH.greLabel(d),
+      greNeeded: UH.greNeeded(d),
+      greNote: d.greNote || "",
+      remote: UH.remoteLabel(d),
+      remoteHint: UH.remoteHint(d),
+      studyMode: d.studyMode || "",
+      attendance: d.attendance || "",
+      onlineNotes: d.onlineNotes || [],
+      deferNotes: d.deferNotes || [],
+      deferReal: !!d.deferReal,
+      intake: UH.nextIntake(d, region),
       applyVia: d.uniAssist ? "uni-assist" : d.applyVia ? "Directly to university" : "",
       applyText: htmlToText(d.applyVia),
       applyUrl: portalUrl(d),
@@ -198,7 +209,9 @@
           { h: "Subject", k: "subject", w: 22, wrap: true },
           { h: "Language", k: "language", w: 14 },
           { h: "Duration", k: "duration", w: 13 },
-          { h: "Starts", k: "start", w: 18, wrap: true },
+          { h: "Intakes", k: "start", w: 18, wrap: true },
+          { h: "Classes start (next intake)", k: "classStart", w: 14, date: true },
+          { h: "Next intake", k: "intakeName", w: 20 },
           { h: "Next deadline", k: "nextDate", w: 14, date: true },
           { h: "Semester", k: "nextSem", w: 16 },
           { h: "Days left", k: "days", w: 10, days: true },
@@ -209,7 +222,9 @@
           { h: "Min. IELTS", k: "ielts", w: 10 },
           { h: "Min. TOEFL iBT", k: "toefl", w: 10 },
           { h: "German", k: "deLevel", w: 13 },
-          { h: "GRE / GMAT", k: "test", w: 11 },
+          { h: "GRE", k: "greCol", w: 20, wrap: true },
+          { h: "Online / remote start", k: "remote", w: 20, wrap: true },
+          { h: "Deferral / late arrival", k: "deferCol", w: 22, wrap: true },
           { h: "Apply via", k: "applyVia", w: 18 },
           { h: "Application portal", k: "applyUrl", w: 18, link: true, linkText: "Apply here" },
           { h: "Programme website", k: "courseUrl", w: 18, link: true, linkText: "Open website" },
@@ -225,7 +240,10 @@
           nextDate: r.next ? xlDate(r.next.date) : r.rolling ? "No deadline" : "See website",
           nextSem: r.next ? r.next.semester : "",
           days: r.next ? r.next.days : "",
-          test: [r.gre && "GRE", r.gmat && "GMAT"].filter(Boolean).join(", ") || "—",
+          greCol: r.greStatus + (r.gmat ? " · GMAT mentioned" : ""),
+          deferCol: r.deferReal ? "Mentioned: " + r.deferNotes.join(" / ") : r.deferNotes.length ? "Visa advice only: " + r.deferNotes.join(" / ") : "Not stated - ask the university",
+          classStart: r.intake ? xlDate(r.intake.date) : "",
+          intakeName: r.intake ? r.intake.name : "",
           status: "Not started",
         })),
         2
@@ -236,7 +254,7 @@
       recs.forEach((r) => {
         if (r.deadlines.length)
           r.deadlines.forEach((d) =>
-            rows.push({ name: r.name, uni: r.uni, sem: d.semester || "", who: d.who || "All applicants", opens: d.opens ? xlDate(d.opens) : "", date: xlDate(d.date), days: d.days, state: (d.state === "soon" ? "Closing soon" : d.state === "notyet" ? "Not open yet" : "Upcoming") + (d.tx ? " · read from text, verify" : ""), sort: d.date })
+            rows.push({ name: r.name, uni: r.uni, sem: d.semester || "", who: d.who || "All applicants", opens: d.opens ? xlDate(d.opens) : "", classStart: UH.semesterStart(d.semester, d.date) ? xlDate(UH.semesterStart(d.semester, d.date).date) : "", date: xlDate(d.date), days: d.days, state: (d.state === "soon" ? "Closing soon" : d.state === "notyet" ? "Not open yet" : "Upcoming") + (d.tx ? " · read from text, verify" : ""), sort: d.date })
           );
         else rows.push({ name: r.name, uni: r.uni, sem: "", who: "", opens: "", date: r.rolling ? "No fixed deadline" : "See website", days: "", state: r.deadlineText, sort: new Date(8.64e15) });
       });
@@ -251,6 +269,7 @@
           { h: "Semester", k: "sem", w: 18 },
           { h: "Applicants from", k: "who", w: 24, wrap: true },
           { h: "Applications open", k: "opens", w: 14, date: true },
+          { h: "Classes start", k: "classStart", w: 14, date: true },
           { h: "Status / note", k: "state", w: 34, wrap: true },
           { h: "Submitted?", k: "submitted", w: 12, list: ["Yes", "No"] },
         ],
@@ -264,7 +283,7 @@
         { h: "University", k: "uni", w: 24, wrap: true },
       ];
       if (S.has("requirements"))
-        cols.push({ h: "Academic requirements", k: "academic", w: 70, wrap: true }, { h: "GRE / GMAT mentioned", k: "test", w: 12 }, { h: "How to apply", k: "applyFull", w: 40, wrap: true });
+        cols.push({ h: "Academic requirements", k: "academic", w: 70, wrap: true }, { h: "GRE", k: "greStatus", w: 18, wrap: true }, { h: "GRE - university's wording", k: "greNote", w: 50, wrap: true }, { h: "How to apply", k: "applyFull", w: 40, wrap: true });
       if (S.has("language"))
         cols.push(
           { h: "English level", k: "enLevel", w: 10 },
@@ -606,10 +625,13 @@
           null,
           [
             ["Degree", r.degree, "Duration", r.duration || "-"],
-            ["Language", r.language, "Starts", r.start || "-"],
+            ["Language", r.language, "Intakes", r.start || "-"],
+            ["Classes start", r.intake ? `${fmtDate(r.intake.date)} (${r.intake.name})` : "-", "GRE", r.greStatus],
             ["Tuition", r.tuition, "Semester fee", r.semesterFee ? `EUR ${r.semesterFee}` : "-"],
             ["Next deadline", r.next ? `${fmtDate(r.next.date)} (${r.next.days} days left)` : r.rolling ? "No fixed deadline" : "See programme website", "English", langSummary(r) || r.enLevel || "-"],
             ["City", r.city, "German", r.deLevel || "-"],
+            ["Lectures", r.intake ? `usually from ${r.intake.lectures}` : "-", "GMAT", r.gmat ? "Mentioned" : "Not mentioned"],
+            ["Online start", r.remote, "Deferral", r.deferReal ? "Mentioned (see below)" : "Not stated"],
           ],
           { theme: "plain", styles: { fontSize: 9, cellPadding: 3.5, textColor: C.ink }, columnStyles: { 0: { fontStyle: "bold", textColor: C.muted, cellWidth: 78 }, 2: { fontStyle: "bold", textColor: C.muted, cellWidth: 78 } }, alternateRowStyles: {} }
         );
@@ -618,16 +640,27 @@
           heading("Application deadlines");
           if (r.deadlines.length) {
             table(
-              ["Semester", "Applicants from", "Opens", "Deadline", "Days left"],
-              r.deadlines.map((d) => [(d.semester || "-") + (d.tx ? " *" : ""), d.who || "All applicants", d.opens ? fmtDate(d.opens) : "-", { content: fmtDate(d.date), styles: { fontStyle: "bold", textColor: C.ink } }, { content: String(d.days), styles: d.days <= 30 ? { textColor: C.danger, fontStyle: "bold" } : {} }])
+              ["Semester", "Applicants from", "Opens", "Deadline", "Days left", "Classes start"],
+              r.deadlines.map((d) => [(d.semester || "-") + (d.tx ? " *" : ""), d.who || "All applicants", d.opens ? fmtDate(d.opens) : "-", { content: fmtDate(d.date), styles: { fontStyle: "bold", textColor: C.ink } }, { content: String(d.days), styles: d.days <= 30 ? { textColor: C.danger, fontStyle: "bold" } : {} }, UH.semesterStart(d.semester, d.date) ? fmtDate(UH.semesterStart(d.semester, d.date).date) : "-"])
             );
             if (r.deadlines.some((d) => d.tx)) para("* Read from the university's description - please verify on the official page.", { size: 7.5, color: C.muted });
           } else para(r.deadlineText || "No deadline listed - check the programme website.");
         }
+        if (S.has("deadlines")) {
+          heading("If you can't arrive on time");
+          para(`Online / remote study: ${r.remote} - ${r.remoteHint}.${r.studyMode ? " Mode of study: " + r.studyMode + "." : ""}${r.attendance ? " Attendance in Germany: " + r.attendance + "." : ""}`);
+          r.onlineNotes.forEach((q) => para(`"${q}"`, { size: 8.5, indent: 10 }));
+          if (r.deferNotes.length) {
+            sub(r.deferReal ? "Deferral / late arrival (as stated by the university)" : "Visa timing advice from the university");
+            r.deferNotes.forEach((q) => para(`"${q}"`, { size: 8.5, indent: 10 }));
+          } else para("Deferral: not stated. German universities usually don't hold a place - ask the admissions office about online start, latest arrival date and deferral before your visa appointment.", { size: 8.5 });
+        }
         if (S.has("requirements")) {
           heading("Academic requirements");
           para(r.academic || "Not specified - see the programme website.");
-          if (r.gre || r.gmat) para(`Note: ${[r.gre && "GRE", r.gmat && "GMAT"].filter(Boolean).join(" / ")} is mentioned in the requirements.`, { style: "bold", color: C.ink });
+          sub(`GRE: ${r.greStatus}`);
+          if (r.greNote) para(`University's wording: "${r.greNote}"`, { size: 8.5 });
+          if (r.gmat) para("GMAT is also mentioned in the requirements.", { size: 8.5 });
         }
         if (S.has("language")) {
           heading("Language requirements");
@@ -733,17 +766,20 @@
         const acad = (r.academic || "-").replace(/\n+/g, " ").replace(/\s+/g, " ");
         const tuitionShort = r.tuition.length > 90 ? r.tuition.slice(0, 87) + "..." : r.tuition;
         const costs = [tuitionShort, r.semesterFee && `Sem. fee EUR ${r.semesterFee}`, r.living && `Living ${r.living}/mo`].filter(Boolean).join("\n");
-        const tests = [r.gre && "GRE", r.gmat && "GMAT"].filter(Boolean).join(", ");
+        const greCell = { content: r.greStatus.replace(" (not required)", "") + (r.gmat ? "\nGMAT mentioned" : ""), styles: r.greNeeded ? { textColor: C.danger, fontStyle: "bold" } : {} };
+        const startCell = r.intake ? `${fmtDate(r.intake.date)}\n${r.intake.name}\nLectures ~${r.intake.lectures}` : r.start || "-";
         rows.push({
           r,
           cells: [
             String(i),
             { content: `${r.name}\n\n${r.uni}`, styles: { textColor: C.ink, fontStyle: "bold" } },
-            `${r.degree}\n${r.language}\n${r.duration}\n${r.start}`,
+            `${r.degree}\n${r.language}\n${r.duration}`,
+            startCell,
             { content: dls, styles: r.next && r.next.days <= 30 ? { textColor: C.danger } : {} },
             en,
             r.deLevel || "-",
-            (acad.length > 420 ? acad.slice(0, 417) + "..." : acad) + (tests ? `\n[${tests} mentioned]` : ""),
+            greCell,
+            acad.length > 330 ? acad.slice(0, 327) + "..." : acad,
             costs,
             { content: `${r.applyVia || "See website"}\n\nOpen portal >`, styles: { textColor: C.primary, fontStyle: "bold" } },
           ],
@@ -758,7 +794,7 @@
     });
     doc.autoTable({
       startY: y,
-      head: [["#", "University / Programme", "Degree / language / duration / start", "Deadlines", "English", "German", "Academic requirements", "Costs", "Apply"].map(T)],
+      head: [["#", "Programme / University", "Degree / language / duration", "Classes start", "Deadlines", "English", "German", "GRE", "Academic requirements", "Costs", "Apply"].map(T)],
       body: overviewBody,
       margin: { left: 24, right: 24, top: 30, bottom: 44 },
       rowPageBreak: "avoid",
@@ -766,12 +802,12 @@
       headStyles: { fillColor: C.navy, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 7.5 },
       alternateRowStyles: { fillColor: C.soft },
       theme: "grid",
-      columnStyles: { 0: { cellWidth: 18 }, 1: { cellWidth: 128 }, 2: { cellWidth: 82 }, 3: { cellWidth: 98 }, 4: { cellWidth: 66 }, 5: { cellWidth: 48 }, 6: { cellWidth: 196 }, 7: { cellWidth: 82 }, 8: { cellWidth: 76 } },
+      columnStyles: { 0: { cellWidth: 16 }, 1: { cellWidth: 118 }, 2: { cellWidth: 64 }, 3: { cellWidth: 68 }, 4: { cellWidth: 92 }, 5: { cellWidth: 56 }, 6: { cellWidth: 44 }, 7: { cellWidth: 58 }, 8: { cellWidth: 150 }, 9: { cellWidth: 72 }, 10: { cellWidth: 56 } },
       didDrawCell: (h) => {
         if (h.section !== "body") return;
         const r = rowRec.get(h.row.raw) || (rows[h.row.index] || {}).r;
         if (!r) return;
-        if (h.column.index === 8 && r.applyUrl) doc.link(h.cell.x, h.cell.y, h.cell.width, h.cell.height, { url: r.applyUrl });
+        if (h.column.index === 10 && r.applyUrl) doc.link(h.cell.x, h.cell.y, h.cell.width, h.cell.height, { url: r.applyUrl });
         if (h.column.index === 1 && (r.courseUrl || r.daadUrl)) doc.link(h.cell.x, h.cell.y, h.cell.width, h.cell.height, { url: r.courseUrl || r.daadUrl });
       },
     });
@@ -886,7 +922,7 @@
             return `<div class="sel-row">
               ${avatar(p.u)}
               <div class="sel-main">
-                <a href="program.html?id=${p.id}" class="sel-name">${esc(p.n)}</a>
+                <a href="program.html?id=${p.id}" target="_blank" rel="noopener" class="sel-name">${esc(p.n)}</a>
                 <div class="muted sel-sub">${esc(p.u)} · ${esc(p.c)}</div>
                 <div class="tags"><span class="badge badge-primary">${degreeName(p.d)}</span>${deadlineBadge(p)}${p.ielts ? `<span class="badge badge-gold">IELTS ${p.ielts}</span>` : ""}<span class="badge ${isFree(p) ? "badge-ok" : ""}">${esc(feeLabel(p))}</span></div>
               </div>

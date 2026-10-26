@@ -137,11 +137,13 @@
     req: (p) =>
       S.req.every((r) => {
         if (r === "nogerman") return !p.de;
-        if (r === "nogre") return !p.gre;
+        if (r === "nogre") return !UH.greNeeded(p);
         if (r === "direct") return !p.ua;
         if (r === "uniassist") return !!p.ua;
         if (r === "eligible") return match(p).status !== "no";
         if (r === "online") return !!p.online;
+        if (r === "remote") return UH.canStartRemote(p);
+        if (r === "defer") return !!p.df;
         return true;
       }),
   };
@@ -190,7 +192,9 @@
   const REQS = [
     ["eligible", "I meet the language requirement", "Uses your profile"],
     ["nogerman", "No German required"],
-    ["nogre", "No GRE mentioned"],
+    ["nogre", "GRE not required"],
+    ["remote", "Can study online / hybrid", "Helpful if your visa is delayed"],
+    ["defer", "Deferral or late arrival mentioned"],
     ["direct", "Apply directly to university"],
     ["uniassist", "Apply via uni-assist"],
     ["online", "Fully online application"],
@@ -341,13 +345,16 @@
     if (p.ielts) tags.push(`<span class="badge badge-gold" title="Minimum IELTS Academic">IELTS ${p.ielts}</span>`);
     else if (p.en) tags.push(`<span class="badge badge-gold" title="Required English level (no IELTS score listed)">English ${esc(p.en)}</span>`);
     if (p.de) tags.push(`<span class="badge badge-gold">German ${esc(p.de)}</span>`);
+    if (UH.canStartRemote(p)) tags.push(`<span class="badge badge-info" title="${esc(UH.remoteHint(p))}">${icon("globe")} ${esc(UH.remoteLabel(p))}</span>`);
+    if (p.df) tags.push(`<span class="badge badge-info" title="The university mentions deferral or late arrival">Deferral mentioned</span>`);
+    if (UH.greNeeded(p)) tags.push(`<span class="badge badge-danger" title="${esc(UH.greLabel(p))}">GRE ${p.gr === "req" ? "required" : p.gr === "some" ? "for some" : "(waivable)"}</span>`);
     if (m && m.status === "ok") tags.push(`<span class="badge badge-ok match">${icon("check")} You qualify</span>`);
     if (m && m.status === "no") tags.push(`<span class="badge badge-danger match" title="${esc(m.notes.filter((n) => n.pass === false).map((n) => n.text).join(" · "))}">${icon("x")} Language gap</span>`);
     return `
       <article class="card">
         ${avatar(p.u)}
         <div>
-          <h3><a href="program.html?id=${p.id}">${esc(p.n)}</a></h3>
+          <h3><a href="program.html?id=${p.id}" target="_blank" rel="noopener">${esc(p.n)}</a></h3>
           <div class="uni"><span>${icon("cap")} ${esc(p.u)}</span><span>${icon("pin")} ${esc(p.c)}</span>${p.s ? `<span>${icon("doc")} ${esc(p.s)}</span>` : ""}${p.dur ? `<span>${icon("clock")} ${esc(p.dur)}</span>` : ""}</div>
           <div class="tags">${tags.join("")}</div>
         </div>
@@ -502,7 +509,7 @@
         `<b>${esc(p0.u)}</b><br><span class="muted">${esc(p0.c)} · ${list.length} programme${list.length > 1 ? "s" : ""}</span><hr style="border:0;border-top:1px solid #ddd">` +
           list
             .slice(0, 30)
-            .map((p) => `<a href="program.html?id=${p.id}">${esc(p.n)}</a>`)
+            .map((p) => `<a href="program.html?id=${p.id}" target="_blank" rel="noopener">${esc(p.n)}</a>`)
             .join("") +
           (list.length > 30 ? `<span class="muted">+${list.length - 30} more</span>` : "")
       );

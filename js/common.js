@@ -183,6 +183,48 @@
   function nextDeadline(p, region) {
     return deadlines(p, region)[0] || null;
   }
+  // ---------- remote study / deferral
+  const REMOTE = {
+    full: ["Fully online", "No need to be in Germany for classes"],
+    hybrid: ["Hybrid / online start possible", "Part of the programme can be followed online"],
+    partly: ["Mostly on-site", "Some optional online elements"],
+    text: ["Online elements mentioned", "Read the university's wording below"],
+  };
+  const remoteLabel = (p) => (REMOTE[p.rm || p.remote] || ["On-site", "No online option listed — plan to be in Germany"])[0];
+  const remoteHint = (p) => (REMOTE[p.rm || p.remote] || ["On-site", "No online option listed — plan to be in Germany"])[1];
+  const canStartRemote = (p) => ["full", "hybrid"].includes(p.rm || p.remote);
+
+  // ---------- GRE & semester start
+  const GRE = { req: "Required", some: "Required for some applicants", waive: "Required, can be waived", rec: "Recommended / optional" };
+  const greLabel = (p) => (p.gr || p.greStatus ? GRE[p.gr || p.greStatus] : "Not mentioned (not required)");
+  const greNeeded = (p) => ["req", "some", "waive"].includes(p.gr || p.greStatus);
+
+  /** When the semester a deadline belongs to starts. German semesters are fixed:
+   *  winter 1 Oct (lectures ~mid-Oct), summer 1 Apr (lectures ~mid-Apr). */
+  function semesterStart(sem, after) {
+    const winter = /winter/i.test(sem || "");
+    const summer = /summer/i.test(sem || "");
+    if (!winter && !summer) return null;
+    const ref = after || today();
+    const m = winter ? 9 : 3;
+    let y = ref.getFullYear();
+    if (ref.getMonth() >= m) y++;
+    const date = new Date(y, m, 1);
+    return {
+      date,
+      name: winter ? `Winter semester ${y}/${String(y + 1).slice(2)}` : `Summer semester ${y}`,
+      lectures: winter ? `mid-October ${y}` : `mid-April ${y}`,
+    };
+  }
+  /** Next intake for a programme: from its next deadline's semester, else from "Beginning". */
+  function nextIntake(p, region) {
+    const dl = nextDeadline(p, region);
+    if (dl && semesterStart(dl.semester)) return semesterStart(dl.semester, dl.date);
+    const opts = [/winter/i.test(p.b || "") && semesterStart("winter"), /summer/i.test(p.b || "") && semesterStart("summer")].filter(Boolean);
+    return opts.sort((a, b) => a.date - b.date)[0] || null;
+  }
+  const intakeLabel = (s) => (s ? `${fmtDate(s.date)} (${s.name}; lectures usually from ${s.lectures})` : "");
+
   const fmtDate = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
   const fmtDM = (dm) => `${dm.d} ${MONTHS[dm.m - 1]}${dm.y ? " " + dm.y : ""}`;
   function daysLabel(days) {
@@ -353,6 +395,21 @@
   function icon(name, cls) {
     return `<svg class="icon ${cls || ""}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ""}</svg>`;
   }
+
+  // ---------- every content link opens in a new tab
+  // (except the top menu, in-page #section jumps, email links and file downloads)
+  document.addEventListener(
+    "click",
+    (e) => {
+      const a = e.target.closest && e.target.closest("a[href]");
+      if (!a || a.closest("#site-header")) return;
+      const href = a.getAttribute("href") || "";
+      if (!href || href.startsWith("#") || /^(mailto|tel|javascript):/i.test(href) || a.hasAttribute("download")) return;
+      a.target = "_blank";
+      a.rel = "noopener";
+    },
+    true
+  );
 
   // ---------- theme
   function applyTheme(t) {
@@ -542,7 +599,7 @@
   const isFree = (p) => /no tuition/i.test(p.fee || "");
 
   window.UH = {
-    store, watchlist, compare, exportList, checklistItems, loadDetails, loadScript, profile, match, deadlines, nextDeadline, deadlineBadge,
+    store, watchlist, compare, exportList, checklistItems, remoteLabel, remoteHint, canStartRemote, greLabel, greNeeded, semesterStart, nextIntake, intakeLabel, loadDetails, loadScript, profile, match, deadlines, nextDeadline, deadlineBadge,
     fmtDate, fmtDM, daysLabel, buildIcs, download, esc, $, $$, toast, avatar, icon,
     header, modal, closeModal, openProfile, DATA, byId, degreeName, langLabel, feeLabel, isFree, CEFR,
   };
